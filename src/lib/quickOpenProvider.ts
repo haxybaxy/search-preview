@@ -12,7 +12,7 @@ export class QuickOpenProvider {
     
     constructor(editorHistoryManager: EditorHistoryManager) {
         this.editorHistoryManager = editorHistoryManager;
-        this.previewManager = new PreviewManager();
+        this.previewManager = new PreviewManager(editorHistoryManager);
     }
     
     /**
@@ -36,8 +36,17 @@ export class QuickOpenProvider {
         // Show progress indicator while loading initial files
         quickPick.busy = true;
         
+        // Enable preview mode to prevent files from being added to history during preview
+        this.previewManager.setPreviewMode(true);
+        
         // Show the quick pick UI immediately
         quickPick.show();
+        
+        // Handle when the picker is closed
+        quickPick.onDidHide(() => {
+            // Disable preview mode when the quick pick is closed
+            this.previewManager.setPreviewMode(false);
+        });
         
         // Load initial files list based on mode
         try {
@@ -97,24 +106,97 @@ export class QuickOpenProvider {
         // Get all workspace files for filename matching
         const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
         
-        // Filter files based on filename
-        const filenameMatches = files.filter(file => {
-            const fileName = path.basename(file.fsPath).toLowerCase();
-            const filePath = vscode.workspace.asRelativePath(file.fsPath).toLowerCase();
-            return fileName.includes(value.toLowerCase()) || filePath.includes(value.toLowerCase());
+        // Calculate relevance scores and filter files based on filename and path
+        const valueLC = value.toLowerCase();
+        const scoredMatches = files
+            .filter(file => {
+                // First, filter out binary files for search performance
+                if (isBinaryFile(file.fsPath)) {
+                    return false;
+                }
+                
+                const fileName = path.basename(file.fsPath).toLowerCase();
+                const filePath = vscode.workspace.asRelativePath(file.fsPath).toLowerCase();
+                
+                // Only include files that match the search in filename or path
+                return fileName.includes(valueLC) || filePath.includes(valueLC);
+            })
+            .map(file => {
+                const fileName = path.basename(file.fsPath).toLowerCase();
+                const filePath = vscode.workspace.asRelativePath(file.fsPath).toLowerCase();
+                
+                // Calculate relevance score based on multiple factors
+                let score = 0;
+                
+                // 1. Exact filename match gets highest priority
+                if (fileName === valueLC) {
+                    score += 100;
+                }
+                // 2. Filename starts with the search term
+                else if (fileName.startsWith(valueLC)) {
+                    score += 80;
+                }
+                // 3. Filename contains the search term
+                else if (fileName.includes(valueLC)) {
+                    score += 60;
+                }
+                // 4. Direct parent directory matches
+                const parentDir = path.dirname(filePath).split(path.sep).pop() || '';
+                if (parentDir.toLowerCase().includes(valueLC)) {
+                    score += 40;
+                }
+                // 5. Path contains the search term
+                if (filePath.includes(valueLC)) {
+                    score += 20;
+                    
+                    // Bonus points for each segment of the path that matches
+                    const pathSegments = filePath.split(path.sep);
+                    for (const segment of pathSegments) {
+                        if (segment.includes(valueLC)) {
+                            score += 5;
+                        }
+                    }
+                    
+                    // Adjust score by how close the match is to the search term
+                    // Closer matches = higher scores
+                    const indexInPath = filePath.indexOf(valueLC);
+                    const pathLength = filePath.length;
+                    // Files with matches closer to the end of the path (filename/dirname) get a boost
+                    score += Math.round(10 * (indexInPath / pathLength));
+                }
+                
+                return { file, score };
+            })
+            // Sort by score (descending)
+            .sort((a, b) => b.score - a.score);
+            
+        // Convert to quick pick items
+        const filenameResults = scoredMatches.map(({ file }) => {
+            const relativePath = vscode.workspace.asRelativePath(file.fsPath);
+            const fileIcon = getFileIcon(file.fsPath);
+            
+            return {
+                label: `${fileIcon} ${path.basename(file.fsPath)}`,
+                description: getFileLocation(relativePath),
+                data: {
+                    filePath: file.fsPath,
+                    linePos: 0,
+                    colPos: 0,
+                    searchText: value,
+                    type: 'file' as 'file' | 'content'
+                }
+            };
         });
-        
-        const filenameResults = createFileSearchItems(filenameMatches, value);
         
         // Only attempt content search for 3+ characters
         const contentResults: SearchQuickPickItem[] = [];
         
         // Skip file content search for short queries
         if (value.length >= 3) {
-            // Filter out binary files before searching
-            const textFilesToSearch = files
-                .filter(file => !isBinaryFile(file.fsPath))
-                .slice(0, 20); // Limit to 20 files for performance
+            // Use the top files from filename search as the source for content search
+            const textFilesToSearch = scoredMatches
+                .slice(0, 20) // Limit to 20 files for performance
+                .map(({ file }) => file);
             
             await searchInFileContents(textFilesToSearch, value, contentResults);
         }
@@ -198,7 +280,7 @@ export class QuickOpenProvider {
                             filePath: uri.fsPath,
                             linePos: 0,
                             colPos: 0,
-                            type: 'file'
+                            type: 'file' as 'file' | 'content'
                         }
                     });
                 }
@@ -268,7 +350,7 @@ export class QuickOpenProvider {
                         filePath: uri.fsPath,
                         linePos: 0,
                         colPos: 0,
-                        type: 'file'
+                        type: 'file' as 'file' | 'content'
                     }
                 });
             }

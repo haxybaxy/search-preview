@@ -3,13 +3,25 @@ import * as path from 'path';
 import { SearchQuickPickItem } from '../types';
 import { isBinaryFile, setCursorPosition } from '../utils/fileUtils';
 import { DecorationManager } from '../utils/decorationUtils';
+import { EditorHistoryManager } from './editorHistory';
 
 export class PreviewManager {
     private lastPreviewEditor?: vscode.TextEditor;
     private decorationManager: DecorationManager;
+    private editorHistoryManager?: EditorHistoryManager;
     
-    constructor() {
+    constructor(editorHistoryManager?: EditorHistoryManager) {
         this.decorationManager = new DecorationManager();
+        this.editorHistoryManager = editorHistoryManager;
+    }
+    
+    /**
+     * Enable or disable preview mode to prevent files from being added to history
+     */
+    public setPreviewMode(enabled: boolean): void {
+        if (this.editorHistoryManager) {
+            this.editorHistoryManager.setPreviewMode(enabled);
+        }
     }
     
     /**
@@ -34,6 +46,11 @@ export class PreviewManager {
         
         // Use a try-catch block to handle errors
         try {
+            // Register this file as being previewed
+            if (this.editorHistoryManager) {
+                this.editorHistoryManager.addPreviewedFile(filePath);
+            }
+            
             // Proceed with text file preview using async/await
             const documentPromise = vscode.workspace.openTextDocument(path.resolve(filePath));
             
@@ -85,6 +102,14 @@ export class PreviewManager {
         const { filePath, linePos, colPos } = data;
         
         try {
+            // When a file is explicitly opened, turn off preview mode
+            // so this file actually gets added to history
+            if (this.editorHistoryManager) {
+                this.editorHistoryManager.setPreviewMode(false);
+                // Force add this file to history
+                this.editorHistoryManager.forceAddToHistory(filePath, linePos, colPos);
+            }
+            
             // Check if it's a binary file
             if (isBinaryFile(filePath)) {
                 // For binary files, use the default editor associated with the file type
