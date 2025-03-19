@@ -119,14 +119,18 @@ export function getFileIcon(filePath: string): string {
 		default:
 			// Check if it's a special file
 			const basename = path.basename(filePath).toLowerCase();
-			if (basename === 'package.json')
+			if (basename === 'package.json') {
 				return '$(package)';
-			if (basename === 'dockerfile')
+			}
+			if (basename === 'dockerfile') {
 				return '$(docker)';
-			if (basename.includes('.vscode'))
+			}
+			if (basename.includes('.vscode')) {
 				return '$(settings-gear)';
-			if (basename === '.gitignore' || basename === '.git')
+			}
+			if (basename === '.gitignore' || basename === '.git') {
 				return '$(git-branch)';
+			}
 			return '$(file)';
 	}
 }
