@@ -9,6 +9,7 @@ export class PreviewManager {
     private lastPreviewEditor?: vscode.TextEditor;
     private decorationManager: DecorationManager;
     private editorHistoryManager?: EditorHistoryManager;
+    private originalAutoRevealSetting: boolean | undefined;
     
     constructor(editorHistoryManager?: EditorHistoryManager) {
         this.decorationManager = new DecorationManager();
@@ -21,6 +22,42 @@ export class PreviewManager {
     public setPreviewMode(enabled: boolean): void {
         if (this.editorHistoryManager) {
             this.editorHistoryManager.setPreviewMode(enabled);
+        }
+        
+        if (enabled) {
+            // When entering preview mode, disable auto reveal
+            this.disableAutoReveal();
+        } else {
+            // When exiting preview mode, restore auto reveal setting
+            this.restoreAutoReveal();
+        }
+    }
+    
+    /**
+     * Temporarily disable auto reveal in explorer
+     */
+    private async disableAutoReveal(): Promise<void> {
+        // Store the original setting
+        this.originalAutoRevealSetting = vscode.workspace
+            .getConfiguration('explorer')
+            .get<boolean>('autoReveal');
+            
+        // Disable auto reveal
+        await vscode.workspace
+            .getConfiguration('explorer')
+            .update('autoReveal', false, vscode.ConfigurationTarget.Workspace);
+    }
+    
+    /**
+     * Restore the original auto reveal setting
+     */
+    private async restoreAutoReveal(): Promise<void> {
+        if (this.originalAutoRevealSetting !== undefined) {
+            await vscode.workspace
+                .getConfiguration('explorer')
+                .update('autoReveal', this.originalAutoRevealSetting, vscode.ConfigurationTarget.Workspace);
+                
+            this.originalAutoRevealSetting = undefined;
         }
     }
     
@@ -57,13 +94,15 @@ export class PreviewManager {
             // Handle the document opening with proper error handling
             documentPromise
                 .then(document => {
+                    // Use only valid options for TextDocumentShowOptions
                     return vscode.window.showTextDocument(document, {
                         preview: true,
                         preserveFocus: true,
+                        viewColumn: vscode.ViewColumn.Active,
+                        selection: new vscode.Range(linePos, colPos, linePos, colPos)
                     })
                     .then(editor => {
                         this.lastPreviewEditor = editor;
-                        setCursorPosition(editor, linePos, colPos);
                         
                         // Highlight the current line
                         this.decorationManager.highlightLine(editor, linePos);
@@ -109,6 +148,9 @@ export class PreviewManager {
                 // Force add this file to history
                 this.editorHistoryManager.forceAddToHistory(filePath, linePos, colPos);
             }
+            
+            // Restore auto reveal for actually opening files
+            await this.restoreAutoReveal();
             
             // Check if it's a binary file
             if (isBinaryFile(filePath)) {

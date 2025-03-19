@@ -24,6 +24,10 @@
       {
         "command": "search-preview.showAllEditorsByMostRecentlyUsed",
         "title": "Show All Editors by Most Recently Used with Preview"
+      },
+      {
+        "command": "search-preview.toggleExplorerAutoReveal",
+        "title": "Toggle Explorer Auto-Reveal"
       }
     ],
     "keybindings": [

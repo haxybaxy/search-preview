@@ -64,6 +64,23 @@ export function activate(context: vscode.ExtensionContext) {
 		() => vscode.commands.executeCommand('search-preview.quickOpenWithPreview')
 	);
 	context.subscriptions.push(commandPalette);
+	
+	// Add a command to toggle auto-reveal in Explorer
+	const toggleAutoRevealCommand = vscode.commands.registerCommand(
+		'search-preview.toggleExplorerAutoReveal',
+		async () => {
+			const config = vscode.workspace.getConfiguration('explorer');
+			const currentSetting = config.get<boolean>('autoReveal');
+			
+			// Toggle the setting
+			await config.update('autoReveal', !currentSetting, vscode.ConfigurationTarget.Global);
+			
+			// Show a message with the new state
+			const state = !currentSetting ? 'enabled' : 'disabled';
+			vscode.window.showInformationMessage(`Explorer auto-reveal ${state}`);
+		}
+	);
+	context.subscriptions.push(toggleAutoRevealCommand);
 }
 
 // This method is called when your extension is deactivated
