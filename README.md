@@ -7,11 +7,14 @@ A VS Code extension that enhances the quick open functionality with file preview
 - Quick search for files by name with real-time preview
 - Search within file contents and see matches highlighted
 - Shows open files and workspace files immediately when opened
+- Browse most recently used editors with preview functionality
 - Highlighted line and text matches
 - Preserves focus on the search dialog while previewing files
 - Works like the default quick open but with preview capability
 
 ## How to Use
+
+### Quick Open with Preview (Ctrl+P / Cmd+P)
 
 1. Press `Ctrl+P` (`Cmd+P` on Mac) to open the enhanced quick open dialog
 2. You'll immediately see a list of currently open files and other workspace files
@@ -21,6 +24,14 @@ A VS Code extension that enhances the quick open functionality with file preview
 6. Each result will be previewed in the editor with highlighted matches
 7. Press Enter to select and open the file permanently
 
+### Most Recently Used Editors with Preview (Ctrl+E / Cmd+E)
+
+1. Press `Ctrl+E` (`Cmd+E` on Mac) to open the most recently used editors dialog
+2. You'll see a list of currently open editors sorted by most recently used
+3. Navigate through the list to preview each file
+4. Type to filter the list of open editors
+5. Press Enter to select and open the editor permanently
+
 ## Requirements
 
 - VS Code 1.98.0 or higher
@@ -29,11 +40,13 @@ A VS Code extension that enhances the quick open functionality with file preview
 
 - `search-preview.quickOpenWithPreview`: Activate the quick open with preview functionality 
 - `search-preview.showCommandPalette`: Show the command palette with preview
+- `search-preview.showAllEditorsByMostRecentlyUsed`: Show all editors by most recently used with preview
 
 ## Known Issues
 
 - Content search is limited to 20 files and 30 results for performance reasons
 - Large files may slow down the search preview
+- Binary files (images, PDFs, etc.) are excluded from preview but can still be opened
 
 ## Release Notes
 
@@ -42,6 +55,8 @@ A VS Code extension that enhances the quick open functionality with file preview
 - Initial release with basic preview functionality
 - File name search and basic content search
 - Highlighting of matches
+- Most recently used editors functionality
+- Binary file detection and handling
 
 ---
 

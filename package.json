@@ -20,6 +20,10 @@
       {
         "command": "search-preview.showCommandPalette",
         "title": "Show Command Palette with Preview"
+      },
+      {
+        "command": "search-preview.showAllEditorsByMostRecentlyUsed",
+        "title": "Show All Editors by Most Recently Used with Preview"
       }
     ],
     "keybindings": [
@@ -27,6 +31,12 @@
         "command": "search-preview.quickOpenWithPreview",
         "key": "ctrl+p",
         "mac": "cmd+p",
+        "when": "!terminalFocus"
+      },
+      {
+        "command": "search-preview.showAllEditorsByMostRecentlyUsed",
+        "key": "ctrl+e",
+        "mac": "cmd+e",
         "when": "!terminalFocus"
       }
     ]
