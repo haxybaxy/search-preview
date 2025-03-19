@@ -58,12 +58,6 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 	context.subscriptions.push(recentEditorsCommand);
 
-	// Add the standard command to the command palette
-	const commandPalette = vscode.commands.registerCommand(
-		'search-preview.showCommandPalette', 
-		() => vscode.commands.executeCommand('search-preview.quickOpenWithPreview')
-	);
-	context.subscriptions.push(commandPalette);
 	
 	// Add a command to toggle auto-reveal in Explorer
 	const toggleAutoRevealCommand = vscode.commands.registerCommand(
