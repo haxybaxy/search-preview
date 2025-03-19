@@ -15,33 +15,19 @@
     "commands": [
       {
         "command": "search-preview.quickOpenWithPreview",
-        "title": "Quick Open with Preview"
+        "title": "Search Preview: Quick Open with Preview"
       },
       {
         "command": "search-preview.showCommandPalette",
-        "title": "Show Command Palette with Preview"
+        "title": "Search Preview: Show Command Palette with Preview"
       },
       {
         "command": "search-preview.showAllEditorsByMostRecentlyUsed",
-        "title": "Show All Editors by Most Recently Used with Preview"
+        "title": "Search Preview: Show All Editors by Most Recently Used with Preview"
       },
       {
         "command": "search-preview.toggleExplorerAutoReveal",
-        "title": "Toggle Explorer Auto-Reveal"
-      }
-    ],
-    "keybindings": [
-      {
-        "command": "search-preview.quickOpenWithPreview",
-        "key": "ctrl+p",
-        "mac": "cmd+p",
-        "when": "!terminalFocus"
-      },
-      {
-        "command": "search-preview.showAllEditorsByMostRecentlyUsed",
-        "key": "ctrl+e",
-        "mac": "cmd+e",
-        "when": "!terminalFocus"
+        "title": "Search Preview: Toggle Explorer Auto-Reveal"
       }
     ]
   },
