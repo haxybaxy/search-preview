@@ -3,8 +3,9 @@ import * as path from 'path';
 import { SearchQuickPickItem } from '../types';
 import { EditorHistoryManager } from './editorHistory';
 import { PreviewManager } from './previewManager';
-import { createFileSearchItems, searchInFileContents } from '../utils/searchUtils';
+import { createFileSearchItems, searchInFileContents, fuzzySearchFiles } from '../utils/searchUtils';
 import { getFileIcon, getFileLocation, isBinaryFile } from '../utils/fileUtils';
+import * as fuzzysort from 'fuzzysort';
 
 export class QuickOpenProvider {
     private editorHistoryManager: EditorHistoryManager;
@@ -106,80 +107,22 @@ export class QuickOpenProvider {
         // Get all workspace files for filename matching
         const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
         
-        // Calculate relevance scores and filter files based on filename and path
-        const valueLC = value.toLowerCase();
-        const scoredMatches = files
-            .filter(file => {
-                // First, filter out binary files for search performance
-                if (isBinaryFile(file.fsPath)) {
-                    return false;
-                }
-                
-                const fileName = path.basename(file.fsPath).toLowerCase();
-                const filePath = vscode.workspace.asRelativePath(file.fsPath).toLowerCase();
-                
-                // Only include files that match the search in filename or path
-                return fileName.includes(valueLC) || filePath.includes(valueLC);
-            })
-            .map(file => {
-                const fileName = path.basename(file.fsPath).toLowerCase();
-                const filePath = vscode.workspace.asRelativePath(file.fsPath).toLowerCase();
-                
-                // Calculate relevance score based on multiple factors
-                let score = 0;
-                
-                // 1. Exact filename match gets highest priority
-                if (fileName === valueLC) {
-                    score += 100;
-                }
-                // 2. Filename starts with the search term
-                else if (fileName.startsWith(valueLC)) {
-                    score += 80;
-                }
-                // 3. Filename contains the search term
-                else if (fileName.includes(valueLC)) {
-                    score += 60;
-                }
-                // 4. Direct parent directory matches
-                const parentDir = path.dirname(filePath).split(path.sep).pop() || '';
-                if (parentDir.toLowerCase().includes(valueLC)) {
-                    score += 40;
-                }
-                // 5. Path contains the search term
-                if (filePath.includes(valueLC)) {
-                    score += 20;
-                    
-                    // Bonus points for each segment of the path that matches
-                    const pathSegments = filePath.split(path.sep);
-                    for (const segment of pathSegments) {
-                        if (segment.includes(valueLC)) {
-                            score += 5;
-                        }
-                    }
-                    
-                    // Adjust score by how close the match is to the search term
-                    // Closer matches = higher scores
-                    const indexInPath = filePath.indexOf(valueLC);
-                    const pathLength = filePath.length;
-                    // Files with matches closer to the end of the path (filename/dirname) get a boost
-                    score += Math.round(10 * (indexInPath / pathLength));
-                }
-                
-                return { file, score };
-            })
-            // Sort by score (descending)
-            .sort((a, b) => b.score - a.score);
+        // Skip binary files for search performance
+        const textFiles = files.filter(file => !isBinaryFile(file.fsPath));
+        
+        // Use fuzzy search for files
+        const scoredMatches = fuzzySearchFiles(textFiles, value);
             
         // Convert to quick pick items
-        const filenameResults = scoredMatches.map(({ file }) => {
-            const relativePath = vscode.workspace.asRelativePath(file.fsPath);
-            const fileIcon = getFileIcon(file.fsPath);
+        const filenameResults = scoredMatches.map(({ uri }) => {
+            const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+            const fileIcon = getFileIcon(uri.fsPath);
             
             return {
-                label: `${fileIcon} ${path.basename(file.fsPath)}`,
+                label: `${fileIcon} ${path.basename(uri.fsPath)}`,
                 description: getFileLocation(relativePath),
                 data: {
-                    filePath: file.fsPath,
+                    filePath: uri.fsPath,
                     linePos: 0,
                     colPos: 0,
                     searchText: value,
@@ -196,7 +139,7 @@ export class QuickOpenProvider {
             // Use the top files from filename search as the source for content search
             const textFilesToSearch = scoredMatches
                 .slice(0, 20) // Limit to 20 files for performance
-                .map(({ file }) => file);
+                .map(({ uri }) => uri);
             
             await searchInFileContents(textFilesToSearch, value, contentResults);
         }
@@ -213,19 +156,62 @@ export class QuickOpenProvider {
         const activeEditor = vscode.window.activeTextEditor;
         const activeEditorUri = activeEditor?.document.uri.fsPath;
         
-        // Filter editor history based on filename or path
-        const filteredHistory = this.editorHistoryManager.getHistory().filter(item => {
-            if (item.uri.scheme !== 'file' || (activeEditorUri && item.uri.fsPath === activeEditorUri)) {
-                return false;
-            }
-            
-            const fileName = path.basename(item.uri.fsPath).toLowerCase();
-            const filePath = vscode.workspace.asRelativePath(item.uri.fsPath).toLowerCase();
-            return fileName.includes(value.toLowerCase()) || filePath.includes(value.toLowerCase());
+        // Get editor history items
+        const historyItems = this.editorHistoryManager.getHistory().filter(item => {
+            return item.uri.scheme === 'file' && 
+                (!activeEditorUri || item.uri.fsPath !== activeEditorUri);
         });
         
+        // Convert history items to format compatible with fuzzysort
+        const searchData = historyItems.map(item => ({
+            item,
+            path: vscode.workspace.asRelativePath(item.uri.fsPath),
+            basename: path.basename(item.uri.fsPath)
+        }));
+        
+        // Perform fuzzy search on file basenames
+        const basenameResults = fuzzysort.go(value, searchData, { 
+            key: 'basename',
+            threshold: -10000
+        });
+        
+        // Perform fuzzy search on file paths
+        const pathResults = fuzzysort.go(value, searchData, { 
+            key: 'path',
+            threshold: -10000 
+        });
+        
+        // Combine and deduplicate results
+        const combinedResults = new Map<string, { item: any; score: number }>();
+        
+        // Add basename results (higher priority)
+        basenameResults.forEach(result => {
+            const fsPath = result.obj.item.uri.fsPath;
+            combinedResults.set(fsPath, {
+                item: result.obj.item,
+                score: result.score * 2 // Give basename matches higher weight
+            });
+        });
+        
+        // Add path results, potentially overriding if better score
+        pathResults.forEach(result => {
+            const fsPath = result.obj.item.uri.fsPath;
+            const existing = combinedResults.get(fsPath);
+            
+            if (!existing || result.score > existing.score) {
+                combinedResults.set(fsPath, {
+                    item: result.obj.item,
+                    score: result.score
+                });
+            }
+        });
+        
+        // Convert to array and sort by score
+        const sortedResults = Array.from(combinedResults.values())
+            .sort((a, b) => b.score - a.score);
+        
         // Convert to quick pick items
-        const historyItems = filteredHistory.map(item => {
+        const quickPickItems = sortedResults.map(({ item }) => {
             const relativePath = vscode.workspace.asRelativePath(item.uri.fsPath);
             const fileIcon = getFileIcon(item.uri.fsPath);
             
@@ -244,7 +230,7 @@ export class QuickOpenProvider {
         });
         
         // Set the quick pick items
-        quickPick.items = historyItems;
+        quickPick.items = quickPickItems;
     }
     
     /**
