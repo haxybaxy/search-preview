@@ -39,8 +39,8 @@ const isLikelyLibraryPath = (path: string): boolean => {
     const normalizedPath = path.replace(/\\/g, '/');
     
     // Check for common library path patterns
-    if (normalizedPath.match(/\/python\d+\.\d+\//)) return true;
-    if (normalizedPath.match(/\/site-packages\//)) return true;
+    if (normalizedPath.match(/\/python\d+\.\d+\//)) { return true; }
+    if (normalizedPath.match(/\/site-packages\//)) { return true; }
     
     // Common library directories
     const libraryDirs = [
