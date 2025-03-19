@@ -25,7 +25,7 @@ export class QuickOpenProvider {
         
         // Set placeholder text based on mode
         if (mode === 'standard') {
-            quickPick.placeholder = 'Search files, content, and symbols (append : to go to line or @ to go to symbol)';
+            quickPick.placeholder = 'Go to file with preview';
         } else {
             quickPick.placeholder = 'Search open editors by most recently used';
         }
@@ -173,8 +173,8 @@ export class QuickOpenProvider {
         quickPick.busy = true;
         
         try {
-            // First try to get all workspace files (limited to 100)
-            const allFiles = await vscode.workspace.findFiles('**/*', '**/node_modules/**', 100);
+            // First try to get all workspace files (limited to 200 for a broader selection)
+            const allFiles = await vscode.workspace.findFiles('**/*', '**/node_modules/**', 200);
             
             // Get currently open text editors to prioritize them
             const openEditors = vscode.window.visibleTextEditors.map(editor => editor.document.uri);
@@ -204,40 +204,73 @@ export class QuickOpenProvider {
                 }
             }
             
-            // Check if we can access VSCode's recently used documents history
-            // This is only available in some versions of VSCode API
-            let recentDocuments: vscode.Uri[] = [];
-            try {
-                // Try to use VSCode's recent history if available
-                // Fallback to a reasonable list if not available
-                recentDocuments = allFiles
-                    .filter(file => !addedFiles.has(file.fsPath))
-                    .slice(0, 50);
-            } catch (error) {
-                console.log('Could not access recent documents, using fallback', error);
-                recentDocuments = allFiles
-                    .filter(file => !addedFiles.has(file.fsPath))
-                    .slice(0, 50);
-            }
-            
-            // Add recent files
-            for (const uri of recentDocuments) {
-                if (!addedFiles.has(uri.fsPath)) {
-                    addedFiles.set(uri.fsPath, true);
-                    const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
-                    const fileIcon = getFileIcon(uri.fsPath);
-                    
-                    results.push({
-                        label: `${fileIcon} ${path.basename(uri.fsPath)}`,
-                        description: getFileLocation(relativePath),
-                        data: {
-                            filePath: uri.fsPath,
-                            linePos: 0,
-                            colPos: 0,
-                            type: 'file'
+            // Filter out binary files and prioritize common source code files
+            const filteredFiles = allFiles
+                .filter(file => !addedFiles.has(file.fsPath) && !isBinaryFile(file.fsPath))
+                .sort((a, b) => {
+                    // Helper function to get a priority score for file types
+                    const getPriority = (filePath: string): number => {
+                        const ext = path.extname(filePath).toLowerCase();
+                        // Prioritize common source code files
+                        switch (ext) {
+                            case '.ts':
+                            case '.tsx':
+                            case '.js':
+                            case '.jsx':
+                            case '.py':
+                            case '.go':
+                            case '.java':
+                            case '.c':
+                            case '.cpp':
+                            case '.cs':
+                            case '.rb':
+                            case '.php':
+                                return 1;
+                            case '.json':
+                            case '.yaml':
+                            case '.yml':
+                            case '.toml':
+                            case '.md':
+                            case '.css':
+                            case '.scss':
+                            case '.html':
+                            case '.xml':
+                                return 2;
+                            default:
+                                // For other text files
+                                return 3;
                         }
-                    });
-                }
+                    };
+                    
+                    // Sort by priority
+                    const priorityA = getPriority(a.fsPath);
+                    const priorityB = getPriority(b.fsPath);
+                    
+                    if (priorityA !== priorityB) {
+                        return priorityA - priorityB;
+                    }
+                    
+                    // If same priority, sort alphabetically
+                    return path.basename(a.fsPath).localeCompare(path.basename(b.fsPath));
+                })
+                .slice(0, 50); // Limit to 50 files
+            
+            // Add the filtered and prioritized files
+            for (const uri of filteredFiles) {
+                addedFiles.set(uri.fsPath, true);
+                const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+                const fileIcon = getFileIcon(uri.fsPath);
+                
+                results.push({
+                    label: `${fileIcon} ${path.basename(uri.fsPath)}`,
+                    description: getFileLocation(relativePath),
+                    data: {
+                        filePath: uri.fsPath,
+                        linePos: 0,
+                        colPos: 0,
+                        type: 'file'
+                    }
+                });
             }
             
             // Update quickpick items
