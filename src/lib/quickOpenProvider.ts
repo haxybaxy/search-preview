@@ -5,6 +5,7 @@ import { EditorHistoryManager } from './editorHistory';
 import { PreviewManager } from './previewManager';
 import { createFileSearchItems, searchInFileContents, fuzzySearchFiles } from '../utils/searchUtils';
 import { getFileIcon, getFileLocation, isBinaryFile } from '../utils/fileUtils';
+import { SettingsManager } from '../utils/settingsUtils';
 import * as fuzzysort from 'fuzzysort';
 
 export class QuickOpenProvider {
@@ -110,11 +111,15 @@ export class QuickOpenProvider {
      * Handles search for the standard quick open mode
      */
     private async handleStandardSearch(quickPick: vscode.QuickPick<SearchQuickPickItem>, value: string): Promise<void> {
-        // Get all workspace files for filename matching
-        const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
+        // Get all workspace files for filename matching, respecting exclude settings
+        const excludePattern = SettingsManager.getGlobExcludePattern();
+        const files = await vscode.workspace.findFiles('**/*', excludePattern);
         
         // Skip binary files for search performance
-        const textFiles = files.filter(file => !isBinaryFile(file.fsPath));
+        const textFiles = files.filter(file => 
+            !isBinaryFile(file.fsPath) && 
+            !SettingsManager.shouldExcludeFile(file.fsPath)
+        );
         
         // Use fuzzy search for files
         const scoredMatches = fuzzySearchFiles(textFiles, value);
@@ -137,11 +142,11 @@ export class QuickOpenProvider {
             };
         });
         
-        // Only attempt content search for 3+ characters
+        // Only attempt content search for 3+ characters and if enabled in settings
         const contentResults: SearchQuickPickItem[] = [];
         
-        // Skip file content search for short queries
-        if (value.length >= 3) {
+        // Skip file content search for short queries or if disabled
+        if (value.length >= 3 && SettingsManager.isContentSearchEnabled()) {
             // Use the top files from filename search as the source for content search
             const textFilesToSearch = scoredMatches
                 .slice(0, 20) // Limit to 20 files for performance
@@ -150,8 +155,9 @@ export class QuickOpenProvider {
             await searchInFileContents(textFilesToSearch, value, contentResults);
         }
         
-        // Combine and display results
-        quickPick.items = [...filenameResults, ...contentResults];
+        // Combine and display results (limit according to settings)
+        const maxResults = SettingsManager.getMaxResults();
+        quickPick.items = [...filenameResults, ...contentResults].slice(0, maxResults);
     }
     
     /**
@@ -247,8 +253,10 @@ export class QuickOpenProvider {
         quickPick.busy = true;
         
         try {
-            // First try to get all workspace files (limited to 200 for a broader selection)
-            const allFiles = await vscode.workspace.findFiles('**/*', '**/node_modules/**', 200);
+            // First try to get all workspace files, respecting exclude settings
+            const excludePattern = SettingsManager.getGlobExcludePattern();
+            const maxResults = SettingsManager.getMaxResults();
+            const allFiles = await vscode.workspace.findFiles('**/*', excludePattern, maxResults * 2);
             
             // Get currently open text editors to prioritize them
             const openEditors = vscode.window.visibleTextEditors.map(editor => editor.document.uri);
@@ -259,7 +267,8 @@ export class QuickOpenProvider {
             
             // First add currently open files at the top
             for (const uri of openEditors) {
-                if (uri.scheme === 'file' && !addedFiles.has(uri.fsPath)) {
+                if (uri.scheme === 'file' && !addedFiles.has(uri.fsPath) && 
+                    !SettingsManager.shouldExcludeFile(uri.fsPath)) {
                     addedFiles.set(uri.fsPath, true);
                     const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
                     const fileIcon = getFileIcon(uri.fsPath);
@@ -280,7 +289,11 @@ export class QuickOpenProvider {
             
             // Filter out binary files and prioritize common source code files
             const filteredFiles = allFiles
-                .filter(file => !addedFiles.has(file.fsPath) && !isBinaryFile(file.fsPath))
+                .filter(file => 
+                    !addedFiles.has(file.fsPath) && 
+                    !isBinaryFile(file.fsPath) && 
+                    !SettingsManager.shouldExcludeFile(file.fsPath)
+                )
                 .sort((a, b) => {
                     // Helper function to get a priority score for file types
                     const getPriority = (filePath: string): number => {
@@ -327,7 +340,7 @@ export class QuickOpenProvider {
                     // If same priority, sort alphabetically
                     return path.basename(a.fsPath).localeCompare(path.basename(b.fsPath));
                 })
-                .slice(0, 50); // Limit to 50 files
+                .slice(0, maxResults); // Limit based on settings
             
             // Add the filtered and prioritized files
             for (const uri of filteredFiles) {

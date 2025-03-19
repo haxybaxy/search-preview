@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fuzzysort from 'fuzzysort';
 import { SearchQuickPickItem } from '../types';
 import { getFileIcon, getFileLocation, isBinaryFile } from './fileUtils';
+import { SettingsManager } from './settingsUtils';
 
 /**
  * Convert file URIs to SearchQuickPickItems
@@ -92,6 +93,11 @@ export function fuzzySearchFiles(files: vscode.Uri[], searchText: string): { uri
                 
                 // Apply contextual scoring adjustments
                 
+                // Check if file should be excluded based on settings
+                if (SettingsManager.shouldExcludeFile(fsPath)) {
+                    score *= 0.1; // 90% penalty for files that match exclusion patterns
+                }
+                
                 // Heavily penalize library/vendored paths
                 if (isLikelyLibraryPath(relativePath)) {
                     score *= 0.2; // 80% penalty for library paths
@@ -162,10 +168,12 @@ export async function searchInFileContents(
     searchText: string, 
     contentResults: SearchQuickPickItem[]
 ): Promise<void> {
+    const maxContentMatches = SettingsManager.getMaxResults() / 2; // Use half of max results for content
+    
     for (const file of files) {
         try {
-            // Skip binary files
-            if (isBinaryFile(file.fsPath)) {
+            // Skip binary files and excluded files
+            if (isBinaryFile(file.fsPath) || SettingsManager.shouldExcludeFile(file.fsPath)) {
                 continue;
             }
 
@@ -204,8 +212,8 @@ export async function searchInFileContents(
             continue;
         }
         
-        // Limit the total number of results
-        if (contentResults.length >= 30) {
+        // Limit the total number of results based on settings
+        if (contentResults.length >= maxContentMatches) {
             break;
         }
     }

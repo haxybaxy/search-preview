@@ -81,6 +81,15 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	);
 	context.subscriptions.push(toggleAutoRevealCommand);
+	
+	// Add a command to open search settings
+	const openSearchSettingsCommand = vscode.commands.registerCommand(
+		'search-preview.openSearchSettings',
+		() => {
+			vscode.commands.executeCommand('workbench.action.openSettings', 'searchPreview.search');
+		}
+	);
+	context.subscriptions.push(openSearchSettingsCommand);
 }
 
 // This method is called when your extension is deactivated
