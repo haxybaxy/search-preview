@@ -29,7 +29,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const disposable = vscode.commands.registerCommand('search-preview.quickOpenWithPreview', async () => {
 		// Create the quick pick UI
 		const quickPick = vscode.window.createQuickPick<SearchQuickPickItem>();
-		quickPick.placeholder = 'Type to search in files (with preview)';
+		quickPick.placeholder = 'Search files, content, and symbols (append : to go to line or @ to go to symbol)';
 		quickPick.matchOnDescription = true;
 		quickPick.matchOnDetail = true;
 		
@@ -66,10 +66,11 @@ export function activate(context: vscode.ExtensionContext) {
 			
 			const filenameResults: SearchQuickPickItem[] = filenameMatches.map(file => {
 				const relativePath = vscode.workspace.asRelativePath(file.fsPath);
+				const fileIcon = getFileIcon(file.fsPath);
+				
 				return {
-					label: path.basename(file.fsPath),
-					description: relativePath,
-					detail: `$(file) ${relativePath}`,
+					label: `${fileIcon} ${path.basename(file.fsPath)}`,
+					description: getFileLocation(relativePath),
 					data: {
 						filePath: file.fsPath,
 						linePos: 0,
@@ -103,10 +104,11 @@ export function activate(context: vscode.ExtensionContext) {
 							
 							if (lineText.includes(valueText)) {
 								const colPos = lineText.indexOf(valueText);
+								const fileIcon = getFileIcon(file.fsPath);
 								
 								contentResults.push({
-									label: `$(text-size) ${path.basename(file.fsPath)}:${lineIndex + 1}`,
-									description: vscode.workspace.asRelativePath(file.fsPath),
+									label: `${fileIcon} ${path.basename(file.fsPath)}:${lineIndex + 1}`,
+									description: getFileLocation(vscode.workspace.asRelativePath(file.fsPath)),
 									detail: line.length > 50 ? `...${line.substring(0, 50)}...` : line,
 									data: {
 										filePath: file.fsPath,
@@ -204,10 +206,12 @@ export function activate(context: vscode.ExtensionContext) {
 				if (uri.scheme === 'file' && !addedFiles.has(uri.fsPath)) {
 					addedFiles.set(uri.fsPath, true);
 					const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+					const fileIcon = getFileIcon(uri.fsPath);
+					
 					results.push({
-						label: `$(file-opened) ${path.basename(uri.fsPath)}`,
-						description: relativePath,
-						detail: `$(file) Open in editor`,
+						label: `${fileIcon} ${path.basename(uri.fsPath)}`,
+						description: getFileLocation(relativePath),
+						detail: 'recently opened',
 						data: {
 							filePath: uri.fsPath,
 							linePos: 0,
@@ -239,10 +243,11 @@ export function activate(context: vscode.ExtensionContext) {
 				if (!addedFiles.has(uri.fsPath)) {
 					addedFiles.set(uri.fsPath, true);
 					const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+					const fileIcon = getFileIcon(uri.fsPath);
+					
 					results.push({
-						label: path.basename(uri.fsPath),
-						description: relativePath,
-						detail: `$(file) ${relativePath}`,
+						label: `${fileIcon} ${path.basename(uri.fsPath)}`,
+						description: getFileLocation(relativePath),
 						data: {
 							filePath: uri.fsPath,
 							linePos: 0,
@@ -261,6 +266,80 @@ export function activate(context: vscode.ExtensionContext) {
 		} finally {
 			quickPick.busy = false;
 		}
+	}
+
+	// Helper function to get the file icon based on extension
+	function getFileIcon(filePath: string): string {
+		const ext = path.extname(filePath).toLowerCase();
+		
+		// Map of extensions to VSCode codicons
+		// Using the official VSCode file icons where possible
+		switch (ext) {
+			case '.js':
+				return '$(js)';
+			case '.jsx':
+				return '$(react)';
+			case '.ts':
+				return '$(typescript)';
+			case '.tsx':
+				return '$(react)';
+			case '.json':
+				return '$(json)';
+			case '.md':
+				return '$(markdown)';
+			case '.css':
+				return '$(css)';
+			case '.scss':
+			case '.sass':
+				return '$(css)';
+			case '.html':
+				return '$(html)';
+			case '.vue':
+				return '$(preview)';
+			case '.py':
+				return '$(python)';
+			case '.java':
+				return '$(java)';
+			case '.go':
+				return '$(go)';
+			case '.php':
+				return '$(php)';
+			case '.c':
+			case '.cpp':
+			case '.h':
+				return '$(cpp)';
+			case '.cs':
+				return '$(csharp)';
+			case '.rb':
+				return '$(ruby)';
+			case '.rs':
+				return '$(rust)';
+			case '.sh':
+			case '.bash':
+				return '$(terminal)';
+			default:
+				// Check if it's a special file
+				const basename = path.basename(filePath).toLowerCase();
+				if (basename === 'package.json')
+					return '$(package)';
+				if (basename === 'dockerfile')
+					return '$(docker)';
+				if (basename.includes('.vscode'))
+					return '$(settings-gear)';
+				if (basename === '.gitignore' || basename === '.git')
+					return '$(git-branch)';
+				return '$(file)';
+		}
+	}
+
+	// Helper function to format the file location part
+	function getFileLocation(relativePath: string): string {
+		// If it's in a directory, show the directory
+		const dirname = path.dirname(relativePath);
+		if (dirname !== '.') {
+			return dirname;
+		}
+		return '';
 	}
 
 	// Function to preview a file
