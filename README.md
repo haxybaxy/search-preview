@@ -6,6 +6,7 @@ A VS Code extension that enhances the quick open functionality with file preview
 
 - Quick search for files by name with real-time preview
 - Search within file contents and see matches highlighted
+- Shows open files and workspace files immediately when opened
 - Highlighted line and text matches
 - Preserves focus on the search dialog while previewing files
 - Works like the default quick open but with preview capability
@@ -13,11 +14,12 @@ A VS Code extension that enhances the quick open functionality with file preview
 ## How to Use
 
 1. Press `Ctrl+P` (`Cmd+P` on Mac) to open the enhanced quick open dialog
-2. Type to search for files by name
-3. Type at least 3 characters to also search within file contents
-4. Use arrow keys to navigate between results
-5. Each result will be previewed in the editor with highlighted matches
-6. Press Enter to select and open the file permanently
+2. You'll immediately see a list of currently open files and other workspace files
+3. Type to search for specific files by name
+4. Type at least 3 characters to also search within file contents
+5. Use arrow keys to navigate between results
+6. Each result will be previewed in the editor with highlighted matches
+7. Press Enter to select and open the file permanently
 
 ## Requirements
 

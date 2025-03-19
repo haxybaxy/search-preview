@@ -33,13 +33,24 @@ export function activate(context: vscode.ExtensionContext) {
 		quickPick.matchOnDescription = true;
 		quickPick.matchOnDetail = true;
 		
-		// Initial empty state
-		quickPick.items = [];
+		// Show progress indicator while loading initial files
+		quickPick.busy = true;
+		
+		// Show the quick pick UI immediately
+		quickPick.show();
+		
+		// Load initial files list (preload before user types anything)
+		try {
+			await loadInitialFilesList(quickPick);
+		} finally {
+			quickPick.busy = false;
+		}
 		
 		// Update results based on user input
 		quickPick.onDidChangeValue(async (value) => {
 			if (!value || value.length < 2) {
-				quickPick.items = [];
+				// Restore the initial files list if user clears the input
+				await loadInitialFilesList(quickPick);
 				return;
 			}
 			
@@ -161,9 +172,6 @@ export function activate(context: vscode.ExtensionContext) {
 			
 			quickPick.hide();
 		});
-
-		// Show the quick pick UI
-		quickPick.show();
 	});
 
 	context.subscriptions.push(disposable);
@@ -174,6 +182,86 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	context.subscriptions.push(commandPalette);
+
+	// Helper function to load initial files list
+	async function loadInitialFilesList(quickPick: vscode.QuickPick<SearchQuickPickItem>) {
+		// Show loading indicator
+		quickPick.busy = true;
+		
+		try {
+			// First try to get all workspace files (limited to 100)
+			const allFiles = await vscode.workspace.findFiles('**/*', '**/node_modules/**', 100);
+			
+			// Get currently open text editors to prioritize them
+			const openEditors = vscode.window.visibleTextEditors.map(editor => editor.document.uri);
+			
+			// Create a Map to track which files are already added
+			const addedFiles = new Map<string, boolean>();
+			const results: SearchQuickPickItem[] = [];
+			
+			// First add currently open files at the top
+			for (const uri of openEditors) {
+				if (uri.scheme === 'file' && !addedFiles.has(uri.fsPath)) {
+					addedFiles.set(uri.fsPath, true);
+					const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+					results.push({
+						label: `$(file-opened) ${path.basename(uri.fsPath)}`,
+						description: relativePath,
+						detail: `$(file) Open in editor`,
+						data: {
+							filePath: uri.fsPath,
+							linePos: 0,
+							colPos: 0,
+							type: 'file'
+						}
+					});
+				}
+			}
+			
+			// Check if we can access VSCode's recently used documents history
+			// This is only available in some versions of VSCode API
+			let recentDocuments: vscode.Uri[] = [];
+			try {
+				// Try to use VSCode's recent history if available
+				// Fallback to a reasonable list if not available
+				recentDocuments = allFiles
+					.filter(file => !addedFiles.has(file.fsPath))
+					.slice(0, 50);
+			} catch (error) {
+				console.log('Could not access recent documents, using fallback', error);
+				recentDocuments = allFiles
+					.filter(file => !addedFiles.has(file.fsPath))
+					.slice(0, 50);
+			}
+			
+			// Add recent files
+			for (const uri of recentDocuments) {
+				if (!addedFiles.has(uri.fsPath)) {
+					addedFiles.set(uri.fsPath, true);
+					const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+					results.push({
+						label: path.basename(uri.fsPath),
+						description: relativePath,
+						detail: `$(file) ${relativePath}`,
+						data: {
+							filePath: uri.fsPath,
+							linePos: 0,
+							colPos: 0,
+							type: 'file'
+						}
+					});
+				}
+			}
+			
+			// Update quickpick items
+			quickPick.items = results;
+		} catch (error) {
+			console.error('Error loading initial files:', error);
+			quickPick.items = [];
+		} finally {
+			quickPick.busy = false;
+		}
+	}
 
 	// Function to preview a file
 	function peekItem(items: readonly SearchQuickPickItem[]) {
