@@ -47,6 +47,12 @@ export class QuickOpenProvider {
         quickPick.onDidHide(() => {
             // Disable preview mode when the quick pick is closed
             this.previewManager.setPreviewMode(false);
+            
+            // Clear any search-related decorations
+            this.previewManager.clearDecorations();
+            
+            // Dispose of the quickPick to free resources
+            quickPick.dispose();
         });
         
         // Load initial files list based on mode

@@ -10,6 +10,7 @@ export class PreviewManager {
     private decorationManager: DecorationManager;
     private editorHistoryManager?: EditorHistoryManager;
     private originalAutoRevealSetting: boolean | undefined;
+    private previousActiveEditor?: vscode.TextEditor;
     
     constructor(editorHistoryManager?: EditorHistoryManager) {
         this.decorationManager = new DecorationManager();
@@ -25,11 +26,41 @@ export class PreviewManager {
         }
         
         if (enabled) {
-            // When entering preview mode, disable auto reveal
+            // When entering preview mode, store active editor and disable auto reveal
+            this.previousActiveEditor = vscode.window.activeTextEditor;
             this.disableAutoReveal();
         } else {
-            // When exiting preview mode, restore auto reveal setting
+            // When exiting preview mode, restore auto reveal setting and active editor
             this.restoreAutoReveal();
+            this.restoreActiveEditor();
+        }
+    }
+    
+    /**
+     * Restore the active editor that was open before preview started
+     */
+    private async restoreActiveEditor(): Promise<void> {
+        if (this.previousActiveEditor) {
+            try {
+                await vscode.window.showTextDocument(
+                    this.previousActiveEditor.document, 
+                    this.previousActiveEditor.viewColumn
+                );
+                
+                // Restore cursor position
+                if (vscode.window.activeTextEditor) {
+                    vscode.window.activeTextEditor.selection = this.previousActiveEditor.selection;
+                    vscode.window.activeTextEditor.revealRange(
+                        this.previousActiveEditor.selection,
+                        vscode.TextEditorRevealType.Default
+                    );
+                }
+                
+                this.previousActiveEditor = undefined;
+            } catch (error) {
+                // Ignore errors restoring the editor
+                console.log('Error restoring previous editor', error);
+            }
         }
     }
     
@@ -170,6 +201,9 @@ export class PreviewManager {
                     setCursorPosition(editor, linePos, colPos);
                 }
             }
+            
+            // Clear the previous active editor reference since we're opening a new file
+            this.previousActiveEditor = undefined;
         } catch (error) {
             // Handle errors gracefully
             vscode.window.showErrorMessage(`Could not open file: ${path.basename(filePath)}`);
