@@ -2,14 +2,15 @@
   "name": "search-preview",
   "displayName": "Search Preview",
   "description": "Preview files while searching, telescope style",
-  "publisher": "Zaid Alsaheb",
+  "publisher": "zaidalsaheb",
   "repository": {
     "type": "git",
     "url": "https://github.com/haxybaxy/search-preview.git"
   },
-  "version": "0.0.1",
+  "icon": "assets/icon.png",
+  "version": "0.0.2",
   "engines": {
-    "vscode": "^1.98.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
     "Other"
@@ -49,7 +50,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
-    "@types/vscode": "^1.98.0",
+    "@types/vscode": "^1.90.0",
     "@typescript-eslint/eslint-plugin": "^8.25.0",
     "@typescript-eslint/parser": "^8.25.0",
     "@vscode/test-cli": "^0.0.10",
