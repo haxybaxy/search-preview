@@ -110,9 +110,11 @@ If you're using the VSCode Vim extension, you can integrate Search Preview into 
 
 - VS Code 1.90.0 or higher
 
-## Known Issues
+## Known Issues (Will get on a fix ASAP)
 
 - Binary files (images, PDFs, etc.) are excluded from preview but can still be opened
+- Jupyter Notebooks open as JSON
+- Search is pretty slow, need to switch to fzf
 
 ### Building the Extension
 
