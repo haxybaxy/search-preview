@@ -88,11 +88,16 @@ export class QuickOpenProvider {
         });
 
         // Set up the on change handler to show file previews
-        quickPick.onDidChangeActive(items => {
-            // Clear previous decorations
-            this.previewManager.clearDecorations();
-            // Preview the file
-            this.previewManager.peekItem(items);
+        quickPick.onDidChangeActive(async items => {
+            try {
+                // Clear previous decorations
+                this.previewManager.clearDecorations();
+                
+                // Preview the file (await to ensure settings are applied)
+                await this.previewManager.peekItem(items);
+            } catch (error) {
+                console.error('Error during file preview:', error);
+            }
         });
 
         // Handle selection

@@ -13,13 +13,12 @@ This implements the telescope features I use most myself, which are fuzzy findin
 - Highlighted line and text matches
 - Preserves focus on the search dialog while previewing files
 - Works like the default quick open but with preview capability
-- Doesn't expand the file explorer tree when previewing files
 - Returns to your previous file when canceling a search
 - Configurable exclusion patterns for directories and files
 
 ## How to Use
 
-### Quick Open with Preview (Ctrl+P / Cmd+P)
+### Quick Open with Preview 
 
 1. Search `Search Preview: Quick Open with Preview` in the command pallete to open the enhanced quick open dialog (Look below to make keybinds work)
 2. You'll immediately see a list of currently open files and other workspace files
@@ -30,7 +29,7 @@ This implements the telescope features I use most myself, which are fuzzy findin
 7. Press Enter to select and open the file permanently
 8. Press Escape to cancel and return to your previous file
 
-### Most Recently Used Editors with Preview (Ctrl+E / Cmd+E)
+### Most Recently Used Editors with Preview
 
 1. Search `Search Preview Show All Editors by Most Recently Used with Preview` in the command pallete to open the most recently used editors dialog (Look below to make keybinds work)
 2. You'll see a list of currently open editors sorted by most recently used
@@ -63,7 +62,6 @@ This extension provides several settings to customize its behavior:
 
 - `search-preview.quickOpenWithPreview`: Quick open files with preview functionality
 - `search-preview.showAllEditorsByMostRecentlyUsed`: Show all editors by most recently used with preview
-- `search-preview.toggleExplorerAutoReveal`: Toggle whether files are revealed in the explorer when opened
 - `search-preview.openSearchSettings`: Open the search settings configuration
 
 ## Keybinding Examples
