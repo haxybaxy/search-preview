@@ -104,36 +104,11 @@ If you're using the VSCode Vim extension, you can integrate Search Preview into 
 
 ## Requirements
 
-- VS Code 1.98.0 or higher
+- VS Code 1.90.0 or higher
 
 ## Known Issues
 
-- Large files may slow down the search preview
 - Binary files (images, PDFs, etc.) are excluded from preview but can still be opened
-
-## Release Notes
-
-### 0.0.2
-
-- Added fuzzy search functionality
-- Added configurable settings for excluding directories and files
-- Added explorer auto-reveal toggle to prevent tree expansion during search
-- Fixed issue with explorer tree expanding during previews
-- Added restoration of previous file focus when canceling a search
-- Content search is now configurable and can be disabled
-- Added max results limit settings
-
-### 0.0.1
-
-- Initial release with basic preview functionality
-- File name search and basic content search
-- Highlighting of matches
-- Most recently used editors functionality
-- Binary file detection and handling
-
----
-
-## Development
 
 ### Building the Extension
 
