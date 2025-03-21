@@ -7,8 +7,21 @@
     "type": "git",
     "url": "https://github.com/haxybaxy/search-preview.git"
   },
+  "keywords": [
+    "fzf",
+    "search",
+    "file search",
+    "telescope",
+    "peek",
+    "fzf-native",
+    "file search",
+    "workspace search",
+    "search in files",
+    "search in folder",
+    "search preview"
+  ],
   "icon": "assets/icon.png",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.90.0"
   },
