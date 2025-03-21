@@ -3,8 +3,8 @@ import * as path from 'path';
 import { SearchQuickPickItem } from '../types';
 import { EditorHistoryManager } from './editorHistory';
 import { PreviewManager } from './previewManager';
-import { createFileSearchItems, searchInFileContents, fuzzySearchFiles } from '../utils/searchUtils';
-import { getFileIcon, getFileLocation, isBinaryFile } from '../utils/fileUtils';
+import { fuzzySearchFiles } from '../utils/searchUtils';
+import { getFileIcon, getFileLocation } from '../utils/fileUtils';
 import { SettingsManager } from '../utils/settingsUtils';
 import * as fuzzysort from 'fuzzysort';
 
@@ -116,53 +116,49 @@ export class QuickOpenProvider {
      * Handles search for the standard quick open mode
      */
     private async handleStandardSearch(quickPick: vscode.QuickPick<SearchQuickPickItem>, value: string): Promise<void> {
-        // Get all workspace files for filename matching, respecting exclude settings
-        const excludePattern = SettingsManager.getGlobExcludePattern();
-        const files = await vscode.workspace.findFiles('**/*', excludePattern);
+        // Show busy indicator
+        quickPick.busy = true;
         
-        // Skip binary files for search performance
-        const textFiles = files.filter(file => 
-            !isBinaryFile(file.fsPath) && 
-            !SettingsManager.shouldExcludeFile(file.fsPath)
-        );
-        
-        // Use fuzzy search for files
-        const scoredMatches = fuzzySearchFiles(textFiles, value);
+        try {
+            // Get all workspace files for filename matching, respecting exclude settings
+            const excludePattern = SettingsManager.getGlobExcludePattern();
+            const files = await vscode.workspace.findFiles('**/*', excludePattern);
             
-        // Convert to quick pick items
-        const filenameResults = scoredMatches.map(({ uri }) => {
-            const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
-            const fileIcon = getFileIcon(uri.fsPath);
+            // Skip excluded files for search performance
+            const filteredFiles = files.filter(file => 
+                !SettingsManager.shouldExcludeFile(file.fsPath)
+            );
             
-            return {
-                label: `${fileIcon} ${path.basename(uri.fsPath)}`,
-                description: getFileLocation(relativePath),
-                data: {
-                    filePath: uri.fsPath,
-                    linePos: 0,
-                    colPos: 0,
-                    searchText: value,
-                    type: 'file' as 'file' | 'content'
-                }
-            };
-        });
-        
-        // Only attempt content search for 3+ characters and if enabled in settings
-        const contentResults: SearchQuickPickItem[] = [];
-        
-        // Skip file content search for short queries or if disabled
-        if (value.length >= 3 && SettingsManager.isContentSearchEnabled()) {
-            // Use the top files from filename search as the source for content search
-            const textFilesToSearch = scoredMatches
-                .slice(0, 20) // Limit to 20 files for performance
-                .map(({ uri }) => uri);
+            // Use fuzzy search for files - now properly awaited
+            const scoredMatches = await fuzzySearchFiles(filteredFiles, value);
+                
+            // Convert to quick pick items
+            const filenameResults = scoredMatches.map(({ uri }) => {
+                const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+                const fileIcon = getFileIcon(uri.fsPath);
+                
+                return {
+                    label: `${fileIcon} ${path.basename(uri.fsPath)}`,
+                    description: getFileLocation(relativePath),
+                    data: {
+                        filePath: uri.fsPath,
+                        linePos: 0,
+                        colPos: 0,
+                        searchText: value,
+                        type: 'file' as 'file' | 'content'
+                    }
+                };
+            });
             
-            await searchInFileContents(textFilesToSearch, value, contentResults);
+            // Set the items in the quick pick
+            const maxResults = SettingsManager.getMaxResults();
+            quickPick.items = filenameResults.slice(0, maxResults);
+        } catch (error) {
+            console.error('Error during search:', error);
+            quickPick.items = [];
+        } finally {
+            quickPick.busy = false;
         }
-        
-        // Combine and display results (limit according to settings)
-        const maxResults = SettingsManager.getMaxResults();
-        quickPick.items = [...filenameResults, ...contentResults].slice(0, maxResults);
     }
     
     /**
@@ -292,11 +288,10 @@ export class QuickOpenProvider {
                 }
             }
             
-            // Filter out binary files and prioritize common source code files
+            // Filter out excluded files and prioritize common source code files
             const filteredFiles = allFiles
                 .filter(file => 
                     !addedFiles.has(file.fsPath) && 
-                    !isBinaryFile(file.fsPath) && 
                     !SettingsManager.shouldExcludeFile(file.fsPath)
                 )
                 .sort((a, b) => {
