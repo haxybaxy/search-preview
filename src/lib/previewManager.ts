@@ -101,11 +101,6 @@ export class PreviewManager {
             // Highlight the current line
             this.decorationManager.highlightLine(editor, linePos);
             
-            // If this is a content match, also highlight the matching text
-            if (type === 'content' && searchText) {
-                this.decorationManager.highlightSearchMatches(editor, searchText);
-            }
-            
         } catch (error) {
             // Handle any errors
             console.log(`Error previewing file: ${filePath}`, error);
