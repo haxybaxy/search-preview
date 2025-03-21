@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fuzzysort from 'fuzzysort';
 import { spawn } from 'child_process';
 import { SearchQuickPickItem } from '../types';
-import { getFileIcon, getFileLocation, isBinaryFile } from './fileUtils';
+import { getFileIcon, getFileLocation } from './fileUtils';
 import { SettingsManager } from './settingsUtils';
 
 /**
@@ -162,62 +161,3 @@ const isLikelyLibraryPath = (path: string): boolean => {
     
     return libraryDirs.some(dir => normalizedPath.includes(dir));
 };
-
-/**
- * Search for text within file contents and create QuickPickItems for matches
- */
-export async function searchInFileContents(
-    files: vscode.Uri[], 
-    searchText: string, 
-    contentResults: SearchQuickPickItem[]
-): Promise<void> {
-    const maxContentMatches = SettingsManager.getMaxResults() / 2; // Use half of max results for content
-    
-    for (const file of files) {
-        try {
-            // Skip binary files and excluded files
-            if (isBinaryFile(file.fsPath) || SettingsManager.shouldExcludeFile(file.fsPath)) {
-                continue;
-            }
-
-            const document = await vscode.workspace.openTextDocument(file);
-            const text = document.getText();
-            const lines = text.split('\n');
-            
-            // Use fuzzy search for line content
-            const lineResults = fuzzysort.go(searchText, lines, {
-                threshold: -10000, // Lower threshold to include more results
-                limit: 5 // Limit matches per file
-            });
-            
-            // Create items for matches
-            lineResults.forEach(result => {
-                const lineIndex = lines.indexOf(result.target);
-                const line = result.target;
-                const fileIcon = getFileIcon(file.fsPath);
-                
-                contentResults.push({
-                    label: `${fileIcon} ${path.basename(file.fsPath)}:${lineIndex + 1}`,
-                    description: getFileLocation(vscode.workspace.asRelativePath(file.fsPath)),
-                    detail: line.length > 50 ? `...${line.substring(0, 50)}...` : line,
-                    data: {
-                        filePath: file.fsPath,
-                        linePos: lineIndex,
-                        colPos: 0, // We don't know exact match position in fuzzy search
-                        searchText: searchText,
-                        type: 'content',
-                        lineText: line
-                    }
-                });
-            });
-        } catch (error) {
-            // Skip files that can't be read
-            continue;
-        }
-        
-        // Limit the total number of results based on settings
-        if (contentResults.length >= maxContentMatches) {
-            break;
-        }
-    }
-}
