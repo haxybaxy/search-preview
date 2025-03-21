@@ -47,72 +47,44 @@ export function checkKillProcess(spawnRegistry: any[]) {
  */
 export async function fuzzySearchFiles(files: vscode.Uri[], searchText: string): Promise<{ uri: vscode.Uri; score: number }[]> {
     return new Promise((resolve, reject) => {
+        // Pre-filter files to exclude unwanted paths
+        const filteredFiles = files.filter(file => !SettingsManager.shouldExcludeFile(file.fsPath));
+        
         // Create list of file paths for fzf
-        const filePaths = files.map(file => vscode.workspace.asRelativePath(file.fsPath));
+        const filePaths = filteredFiles.map(file => vscode.workspace.asRelativePath(file.fsPath));
         
         // Map from file path to URI for later lookup
         const pathToUriMap = new Map<string, vscode.Uri>();
-        files.forEach(file => {
+        filteredFiles.forEach(file => {
             pathToUriMap.set(vscode.workspace.asRelativePath(file.fsPath), file);
         });
         
-        // Create a temporary file with all paths (could also use stdin)
+        // Create input for fzf
         const fzfInput = filePaths.join('\n');
         
-        // Prepare the fzf command
-        const fzfCmd = `echo "${fzfInput}" | fzf --filter "${searchText}" --no-sort`;
+        // Prepare the fzf command with better options
+        const fzfCmd = `echo "${fzfInput}" | fzf --filter "${searchText}"`;
         
         const spawnRegistry: any[] = [];
         const spawnProcess = spawn(fzfCmd, [], { shell: true });
         spawnRegistry.push(spawnProcess);
         
-        const searchResults: { uri: vscode.Uri; score: number; path: string }[] = [];
+        const searchResults: { uri: vscode.Uri; score: number }[] = [];
         
         spawnProcess.stdout.on('data', (data: Buffer) => {
             const lines = data.toString().split('\n').filter(Boolean);
             
-            // Each line is a match
+            // Each line is a match, and fzf already sorts by best match first
             lines.forEach((line, index) => {
                 const uri = pathToUriMap.get(line);
                 if (uri) {
-                    // Higher index = lower score (fzf returns best matches first)
-                    // Adjust scores based on file paths
-                    let score = 1000 - index;
-                    
-                    // Apply the same contextual scoring adjustments as before
-                    if (SettingsManager.shouldExcludeFile(uri.fsPath)) {
-                        score *= 0.1; // 90% penalty for files that match exclusion patterns
-                    }
-                    
-                    // Penalize library paths
-                    if (isLikelyLibraryPath(line)) {
-                        score *= 0.2; // 80% penalty for library paths
-                    }
-                    
-                    // Penalize specific libraries
-                    if (pathContains(line, '/isort/') || 
-                        pathContains(line, '/pylint/') || 
-                        pathContains(line, '/autopep8/') || 
-                        pathContains(line, '/black/') ||
-                        pathContains(line, '/flake8/') ||
-                        pathContains(line, '/mypy/')) {
-                        score *= 0.1; // 90% additional penalty for specific libraries
-                    }
-                    
-                    // Adjust score based on path depth
-                    const pathDepth = line.split(/[\/\\]/).filter(Boolean).length;
-                    if (pathDepth <= 2) {
-                        score *= 1.5; // 50% boost for root-level files
-                    } else if (pathDepth <= 3) {
-                        score *= 1.3; // 30% boost for files 1 level deep
-                    } else if (pathDepth >= 6) {
-                        score *= 0.7; // 30% penalty for deeply nested files
-                    }
+                    // Use index as score - earlier results (lower index) get higher scores
+                    // This preserves fzf's natural sorting
+                    const score = 1000 - index;
                     
                     searchResults.push({
                         uri,
-                        score,
-                        path: line
+                        score
                     });
                 }
             });
@@ -124,8 +96,8 @@ export async function fuzzySearchFiles(files: vscode.Uri[], searchText: string):
         
         spawnProcess.on('exit', (code: number) => {
             if (code === 0 || code === 1) {
-                // Sort by score (descending)
-                resolve(searchResults.sort((a, b) => b.score - a.score));
+                // Return results - already sorted by fzf's ranking
+                resolve(searchResults);
             } else {
                 reject(`fzf exited with code ${code}`);
             }
