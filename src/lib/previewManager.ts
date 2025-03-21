@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { SearchQuickPickItem } from '../types';
-import { isBinaryFile, setCursorPosition } from '../utils/fileUtils';
+import { setCursorPosition } from '../utils/fileUtils';
 import { DecorationManager } from '../utils/decorationUtils';
 import { EditorHistoryManager } from './editorHistory';
 
@@ -74,12 +74,7 @@ export class PreviewManager {
             return;
         }
 
-        const { filePath, linePos, colPos, searchText, type } = currentItem.data;
-        
-        // Skip preview for binary files
-        if (isBinaryFile(filePath)) {
-            return;
-        }
+        const { filePath, linePos, colPos } = currentItem.data;
         
         try {
             // Register this file as being previewed
@@ -87,20 +82,23 @@ export class PreviewManager {
                 this.editorHistoryManager.addPreviewedFile(filePath);
             }
             
-            // Open the document for preview
-            const document = await vscode.workspace.openTextDocument(path.resolve(filePath));
-            const editor = await vscode.window.showTextDocument(document, {
+            // Use VS Code's native open command to handle all file types appropriately
+            const uri = vscode.Uri.file(filePath);
+            const success = await vscode.commands.executeCommand('vscode.open', uri, {
                 preview: true,
                 preserveFocus: true,
-                viewColumn: vscode.ViewColumn.Active,
-                selection: new vscode.Range(linePos, colPos, linePos, colPos)
+                viewColumn: vscode.ViewColumn.Active
             });
             
-            this.lastPreviewEditor = editor;
-            
-            // Highlight the current line
-            this.decorationManager.highlightLine(editor, linePos);
-            
+            // For text files, VS Code will create a text editor
+            const editor = vscode.window.activeTextEditor;
+            if (editor && editor.document.uri.fsPath === filePath) {
+                this.lastPreviewEditor = editor;
+                
+                // Position cursor and highlight line
+                setCursorPosition(editor, linePos, colPos);
+                this.decorationManager.highlightLine(editor, linePos);
+            }
         } catch (error) {
             // Handle any errors
             console.log(`Error previewing file: ${filePath}`, error);
@@ -133,23 +131,17 @@ export class PreviewManager {
                 this.editorHistoryManager.forceAddToHistory(filePath, linePos, colPos);
             }
             
-            // Check if it's a binary file
-            if (isBinaryFile(filePath)) {
-                // For binary files, use the default editor associated with the file type
-                vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath));
-            } else {
-                // For text files, open with the text editor
-                const document = await vscode.workspace.openTextDocument(filePath);
-                await vscode.window.showTextDocument(document, {
-                    preview: false,
-                    preserveFocus: false
-                });
-                
-                // Position cursor 
-                const editor = vscode.window.activeTextEditor;
-                if (editor) {
-                    setCursorPosition(editor, linePos, colPos);
-                }
+            // Let VS Code determine how to open the file based on its type
+            const uri = vscode.Uri.file(filePath);
+            await vscode.commands.executeCommand('vscode.open', uri, {
+                preview: false,
+                preserveFocus: false
+            });
+            
+            // For text files, VS Code will create a text editor and we can set the cursor
+            const editor = vscode.window.activeTextEditor;
+            if (editor && editor.document.uri.fsPath === filePath) {
+                setCursorPosition(editor, linePos, colPos);
             }
             
             // Clear the previous active editor reference since we're opening a new file
