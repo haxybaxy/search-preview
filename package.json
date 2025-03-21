@@ -49,11 +49,6 @@
           "type": "number",
           "default": 100,
           "description": "Maximum number of search results to display"
-        },
-        "searchPreview.search.contentSearchEnabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Whether to search file contents in addition to file names"
         }
       }
     }

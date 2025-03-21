@@ -10,11 +10,8 @@ https://github.com/user-attachments/assets/70a98df7-5124-41b9-89e4-8affcc3c6dff
 
 ## Features
 - Fuzzy search for files by name with real-time preview
-- Search within file contents and see matches highlighted
-- Contextual search results that prioritize project files over libraries
 - Shows open files and workspace files immediately when opened
 - Browse most recently used editors with preview functionality
-- Highlighted line and text matches
 - Preserves focus on the search dialog while previewing files
 - Works like the default quick open but with preview capability
 - Returns to your previous file when canceling a search
@@ -27,9 +24,7 @@ https://github.com/user-attachments/assets/70a98df7-5124-41b9-89e4-8affcc3c6dff
 1. Search `Search Preview: Quick Open with Preview` in the command pallete to open the enhanced quick open dialog (Look below to make keybinds work)
 2. You'll immediately see a list of currently open files and other workspace files
 3. Type to search for specific files by name using fuzzy matching
-4. Type at least 3 characters to also search within file contents
 5. Use arrow keys to navigate between results
-6. Each result will be previewed in the editor with highlighted matches
 7. Press Enter to select and open the file permanently
 8. Press Escape to cancel and return to your previous file
 
@@ -59,8 +54,6 @@ This extension provides several settings to customize its behavior:
   - Default: `["**/*.min.js", "**/*.log", "**/*.lock", "**/package-lock.json"]`
 - `searchPreview.search.maxResults`: Maximum number of search results to display
   - Default: `100`
-- `searchPreview.search.contentSearchEnabled`: Whether to search file contents in addition to file names
-  - Default: `true`
 
 ### Commands
 
