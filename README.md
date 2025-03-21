@@ -1,6 +1,9 @@
 # Search Preview
 
 A VS Code extension that enhances the quick open functionality with file previews, similar to Telescope in Neovim. 
+
+**YOU HAVE TO INSTALL [FZF] ON YOUR SYSTEM FOR THIS EXTENSION TO WORK!**
+
 This implements the telescope features I use most myself, which are fuzzy finding files and accessing Oldfiles, if you need Live Grep functionality please check out [Periscope](https://github.com/joshmu/periscope).
 
 
