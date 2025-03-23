@@ -35,14 +35,6 @@ export class SettingsManager {
             .get<number>('maxResults', 100);
     }
     
-    /**
-     * Check if content search is enabled
-     */
-    public static isContentSearchEnabled(): boolean {
-        return vscode.workspace
-            .getConfiguration('searchPreview.search')
-            .get<boolean>('contentSearchEnabled', true);
-    }
     
     /**
      * Generate a glob pattern for excluded files to use with workspace.findFiles

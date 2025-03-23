@@ -107,29 +107,3 @@ export async function fuzzySearchFiles(files: vscode.Uri[], searchText: string):
         });
     });
 }
-
-// Helper function to check path components regardless of slash type
-const pathContains = (path: string, segment: string): boolean => {
-    // Normalize path for cross-platform comparison
-    const normalizedPath = path.replace(/\\/g, '/');
-    return normalizedPath.includes(segment);
-};
-
-// Detect if path is likely a system/library path
-const isLikelyLibraryPath = (path: string): boolean => {
-    const normalizedPath = path.replace(/\\/g, '/');
-    
-    // Check for common library path patterns
-    if (normalizedPath.match(/\/python\d+\.\d+\//)) { return true; }
-    if (normalizedPath.match(/\/site-packages\//)) { return true; }
-    
-    // Common library directories
-    const libraryDirs = [
-        '/lib/', '/libs/', '/vendor/', '/node_modules/', 
-        '/dist/', '/build/', '/venv/', '/env/',
-        '/usr/lib/', '/usr/local/', '/usr/share/',
-        '/Library/Python/'
-    ];
-    
-    return libraryDirs.some(dir => normalizedPath.includes(dir));
-};
