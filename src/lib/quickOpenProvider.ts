@@ -6,7 +6,6 @@ import { PreviewManager } from './previewManager';
 import { fuzzySearchFiles } from '../utils/searchUtils';
 import { getFileIcon, getFileLocation } from '../utils/fileUtils';
 import { SettingsManager } from '../utils/settingsUtils';
-import * as fuzzysort from 'fuzzysort';
 
 export class QuickOpenProvider {
     private editorHistoryManager: EditorHistoryManager;
@@ -22,8 +21,12 @@ export class QuickOpenProvider {
      * @param mode 'standard' for normal quick open, 'recent' for most recently used editors
      */
     public async show(mode: 'standard' | 'recent'): Promise<void> {
-        // Create the quick pick UI
         const quickPick = vscode.window.createQuickPick<SearchQuickPickItem>();
+        
+        // Force VSCode to show everything
+        quickPick.matchOnDescription = false;
+        quickPick.matchOnDetail = true;
+        quickPick.sortByLabel = false;
         
         // Set placeholder text based on mode
         if (mode === 'standard') {
@@ -32,10 +35,6 @@ export class QuickOpenProvider {
             quickPick.placeholder = 'Search open editors by most recently used';
         }
         
-        quickPick.matchOnDescription = true;
-        quickPick.matchOnDetail = true;
-        
-        // Show progress indicator while loading initial files
         quickPick.busy = true;
         
         // Enable preview mode to prevent files from being added to history during preview
@@ -116,43 +115,44 @@ export class QuickOpenProvider {
      * Handles search for the standard quick open mode
      */
     private async handleStandardSearch(quickPick: vscode.QuickPick<SearchQuickPickItem>, value: string): Promise<void> {
-        // Show busy indicator
         quickPick.busy = true;
         
         try {
-            // Get all workspace files for filename matching, respecting exclude settings
             const excludePattern = SettingsManager.getGlobExcludePattern();
             const files = await vscode.workspace.findFiles('**/*', excludePattern);
             
-            // Skip excluded files for search performance
-            const filteredFiles = files.filter(file => 
-                !SettingsManager.shouldExcludeFile(file.fsPath)
-            );
-            
-            // Use fuzzy search for files - now properly awaited
-            const scoredMatches = await fuzzySearchFiles(filteredFiles, value);
+            // Let fzf do ALL the filtering
+            const matchResults = await fuzzySearchFiles(files, value);
                 
-            // Convert to quick pick items
-            const filenameResults = scoredMatches.map(({ uri }) => {
+            const filenameResults = matchResults.map(({ uri }) => {
                 const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
                 const fileIcon = getFileIcon(uri.fsPath);
+                const searchablePath = relativePath.replace(/[\/\\]/g, '');
                 
                 return {
-                    label: `${fileIcon} ${path.basename(uri.fsPath)}`,
-                    description: getFileLocation(relativePath),
+                    label: `${fileIcon} ${relativePath}`,
+                    description: '', 
                     data: {
                         filePath: uri.fsPath,
+                        searchablePath,
+                        fileName: path.basename(uri.fsPath),
                         linePos: 0,
                         colPos: 0,
                         searchText: value,
-                        type: 'file' as 'file' | 'content'
+                        type: 'file' as 'file' 
                     }
                 };
             });
             
-            // Set the items in the quick pick
+            // Sort by path length while preserving fzf ordering within same lengths
+            const sortedResults = filenameResults.sort((a, b) => {
+                const aLength = a.label.length;
+                const bLength = b.label.length;
+                return aLength - bLength;
+            });
+            
             const maxResults = SettingsManager.getMaxResults();
-            quickPick.items = filenameResults.slice(0, maxResults);
+            quickPick.items = sortedResults.slice(0, maxResults);
         } catch (error) {
             console.error('Error during search:', error);
             quickPick.items = [];
@@ -165,85 +165,65 @@ export class QuickOpenProvider {
      * Handles search for the most recently used editors mode
      */
     private async handleRecentEditorsSearch(quickPick: vscode.QuickPick<SearchQuickPickItem>, value: string): Promise<void> {
-        // Get the currently active editor URI to exclude it
-        const activeEditor = vscode.window.activeTextEditor;
-        const activeEditorUri = activeEditor?.document.uri.fsPath;
+        // Show busy indicator
+        quickPick.busy = true;
         
-        // Get editor history items
-        const historyItems = this.editorHistoryManager.getHistory().filter(item => {
-            return item.uri.scheme === 'file' && 
-                (!activeEditorUri || item.uri.fsPath !== activeEditorUri);
-        });
-        
-        // Convert history items to format compatible with fuzzysort
-        const searchData = historyItems.map(item => ({
-            item,
-            path: vscode.workspace.asRelativePath(item.uri.fsPath),
-            basename: path.basename(item.uri.fsPath)
-        }));
-        
-        // Perform fuzzy search on file basenames
-        const basenameResults = fuzzysort.go(value, searchData, { 
-            key: 'basename',
-            threshold: -10000
-        });
-        
-        // Perform fuzzy search on file paths
-        const pathResults = fuzzysort.go(value, searchData, { 
-            key: 'path',
-            threshold: -10000 
-        });
-        
-        // Combine and deduplicate results
-        const combinedResults = new Map<string, { item: any; score: number }>();
-        
-        // Add basename results (higher priority)
-        basenameResults.forEach(result => {
-            const fsPath = result.obj.item.uri.fsPath;
-            combinedResults.set(fsPath, {
-                item: result.obj.item,
-                score: result.score * 2 // Give basename matches higher weight
+        try {
+            // Get the currently active editor URI to exclude it
+            const activeEditor = vscode.window.activeTextEditor;
+            const activeEditorUri = activeEditor?.document.uri.fsPath;
+            
+            // Get editor history items
+            const historyItems = this.editorHistoryManager.getHistory().filter(item => {
+                return item.uri.scheme === 'file' && 
+                    (!activeEditorUri || item.uri.fsPath !== activeEditorUri);
             });
-        });
-        
-        // Add path results, potentially overriding if better score
-        pathResults.forEach(result => {
-            const fsPath = result.obj.item.uri.fsPath;
-            const existing = combinedResults.get(fsPath);
             
-            if (!existing || result.score > existing.score) {
-                combinedResults.set(fsPath, {
-                    item: result.obj.item,
-                    score: result.score
-                });
-            }
-        });
-        
-        // Convert to array and sort by score
-        const sortedResults = Array.from(combinedResults.values())
-            .sort((a, b) => b.score - a.score);
-        
-        // Convert to quick pick items
-        const quickPickItems = sortedResults.map(({ item }) => {
-            const relativePath = vscode.workspace.asRelativePath(item.uri.fsPath);
-            const fileIcon = getFileIcon(item.uri.fsPath);
+            // Convert to URI array for fzf search
+            const historyUris = historyItems.map(item => item.uri);
             
-            return {
-                label: `${fileIcon} ${path.basename(item.uri.fsPath)}`,
-                description: getFileLocation(relativePath),
-                detail: 'recently used',
-                data: {
-                    filePath: item.uri.fsPath,
-                    linePos: item.linePos || 0,
-                    colPos: item.colPos || 0,
-                    searchText: value,
-                    type: 'file' as 'file' | 'content'
-                }
-            };
-        });
-        
-        // Set the quick pick items
-        quickPick.items = quickPickItems;
+            // Create a map to quickly get history items by fsPath
+            const historyItemsByPath = new Map();
+            historyItems.forEach(item => {
+                historyItemsByPath.set(item.uri.fsPath, item);
+            });
+            
+            // Use fzf for searching
+            const searchResults = await fuzzySearchFiles(historyUris, value);
+            
+            // Convert to quick pick items
+            const quickPickItems = searchResults.map(({ uri }) => {
+                const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+                const fileIcon = getFileIcon(uri.fsPath);
+                const historyItem = historyItemsByPath.get(uri.fsPath);
+                
+                // Find whether this file is currently open
+                const isCurrentlyOpen = vscode.window.visibleTextEditors.some(
+                    editor => editor.document.uri.fsPath === uri.fsPath
+                );
+                
+                return {
+                    label: `${fileIcon} ${path.basename(uri.fsPath)}`,
+                    description: getFileLocation(relativePath),
+                    detail: isCurrentlyOpen ? 'currently open' : 'recently used',
+                    data: {
+                        filePath: uri.fsPath,
+                        linePos: historyItem.linePos || 0,
+                        colPos: historyItem.colPos || 0,
+                        searchText: value,
+                        type: 'file' as 'file' | 'content'
+                    }
+                };
+            });
+            
+            // Set the quick pick items
+            quickPick.items = quickPickItems;
+        } catch (error) {
+            console.error('Error during search:', error);
+            quickPick.items = [];
+        } finally {
+            quickPick.busy = false;
+        }
     }
     
     /**
@@ -280,70 +260,26 @@ export class QuickOpenProvider {
                         detail: 'currently open',
                         data: {
                             filePath: uri.fsPath,
+                            fileName: path.basename(uri.fsPath),
+                            searchablePath: relativePath.replace(/[\/\\]/g, ''),
                             linePos: 0,
                             colPos: 0,
-                            type: 'file' as 'file' | 'content'
+                            type: 'file' as 'file' 
                         }
                     });
                 }
             }
             
-            // Filter out excluded files and prioritize common source code files
-            const filteredFiles = allFiles
+            // Add remaining files without custom prioritization
+            const remainingFiles = allFiles
                 .filter(file => 
                     !addedFiles.has(file.fsPath) && 
                     !SettingsManager.shouldExcludeFile(file.fsPath)
                 )
-                .sort((a, b) => {
-                    // Helper function to get a priority score for file types
-                    const getPriority = (filePath: string): number => {
-                        const ext = path.extname(filePath).toLowerCase();
-                        // Prioritize common source code files
-                        switch (ext) {
-                            case '.ts':
-                            case '.tsx':
-                            case '.js':
-                            case '.jsx':
-                            case '.py':
-                            case '.go':
-                            case '.java':
-                            case '.c':
-                            case '.cpp':
-                            case '.cs':
-                            case '.rb':
-                            case '.php':
-                                return 1;
-                            case '.json':
-                            case '.yaml':
-                            case '.yml':
-                            case '.toml':
-                            case '.md':
-                            case '.css':
-                            case '.scss':
-                            case '.html':
-                            case '.xml':
-                                return 2;
-                            default:
-                                // For other text files
-                                return 3;
-                        }
-                    };
-                    
-                    // Sort by priority
-                    const priorityA = getPriority(a.fsPath);
-                    const priorityB = getPriority(b.fsPath);
-                    
-                    if (priorityA !== priorityB) {
-                        return priorityA - priorityB;
-                    }
-                    
-                    // If same priority, sort alphabetically
-                    return path.basename(a.fsPath).localeCompare(path.basename(b.fsPath));
-                })
                 .slice(0, maxResults); // Limit based on settings
             
-            // Add the filtered and prioritized files
-            for (const uri of filteredFiles) {
+            // Add the filtered files
+            for (const uri of remainingFiles) {
                 addedFiles.set(uri.fsPath, true);
                 const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
                 const fileIcon = getFileIcon(uri.fsPath);
@@ -355,7 +291,7 @@ export class QuickOpenProvider {
                         filePath: uri.fsPath,
                         linePos: 0,
                         colPos: 0,
-                        type: 'file' as 'file' | 'content'
+                        type: 'file' as 'file' 
                     }
                 });
             }
@@ -407,9 +343,11 @@ export class QuickOpenProvider {
                             detail: isCurrentlyOpen ? 'currently open' : 'recently used',
                             data: {
                                 filePath: historyItem.uri.fsPath,
+                                fileName: path.basename(historyItem.uri.fsPath),
+                                searchablePath: relativePath.replace(/[\/\\]/g, ''),
                                 linePos: historyItem.linePos || 0,
                                 colPos: historyItem.colPos || 0,
-                                type: 'file' as 'file' | 'content'
+                                type: 'file' as 'file' 
                             }
                         });
                     } catch (error) {
