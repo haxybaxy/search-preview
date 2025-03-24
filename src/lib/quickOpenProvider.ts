@@ -4,7 +4,8 @@ import { SearchQuickPickItem } from '../types';
 import { EditorHistoryManager } from './editorHistory';
 import { PreviewManager } from './previewManager';
 import { fuzzySearchFiles } from '../utils/searchUtils';
-import { getFileIcon, getFileLocation } from '../utils/fileUtils';
+import { getFileLocation } from '../utils/fileUtils';
+import { getFileIcon } from '../utils/iconUtils';
 import { SettingsManager } from '../utils/settingsUtils';
 
 export class QuickOpenProvider {

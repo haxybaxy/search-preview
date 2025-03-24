@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { SearchQuickPickItem } from '../types';
-import { getFileIcon, getFileLocation } from './fileUtils';
+import { getFileLocation } from './fileUtils';
+import { getFileIcon } from './iconUtils';
 import { SettingsManager } from './settingsUtils';
 
 /**
