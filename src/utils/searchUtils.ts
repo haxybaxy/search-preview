@@ -43,9 +43,9 @@ export function checkKillProcess(spawnRegistry: any[]) {
  * Perform a fuzzy search on file paths using fzf
  * @param files Array of file URIs to search
  * @param searchText Search query
- * @returns Promise that resolves to sorted array of file URIs with their scores
+ * @returns Promise that resolves to array of file URIs
  */
-export async function fuzzySearchFiles(files: vscode.Uri[], searchText: string): Promise<{ uri: vscode.Uri; score: number }[]> {
+export async function fuzzySearchFiles(files: vscode.Uri[], searchText: string): Promise<{ uri: vscode.Uri }[]> {
     return new Promise((resolve, reject) => {
         // Pre-filter files to exclude unwanted paths
         const filteredFiles = files.filter(file => !SettingsManager.shouldExcludeFile(file.fsPath));
@@ -62,30 +62,23 @@ export async function fuzzySearchFiles(files: vscode.Uri[], searchText: string):
         // Create input for fzf
         const fzfInput = filePaths.join('\n');
         
-        // Prepare the fzf command with better options
+        // Prepare the fzf command
         const fzfCmd = `echo "${fzfInput}" | fzf --filter "${searchText}"`;
         
         const spawnRegistry: any[] = [];
         const spawnProcess = spawn(fzfCmd, [], { shell: true });
         spawnRegistry.push(spawnProcess);
         
-        const searchResults: { uri: vscode.Uri; score: number }[] = [];
+        const searchResults: { uri: vscode.Uri }[] = [];
         
         spawnProcess.stdout.on('data', (data: Buffer) => {
             const lines = data.toString().split('\n').filter(Boolean);
             
-            // Each line is a match, and fzf already sorts by best match first
-            lines.forEach((line, index) => {
+            // Each line is a match, fzf already sorts by best match
+            lines.forEach(line => {
                 const uri = pathToUriMap.get(line);
                 if (uri) {
-                    // Use index as score - earlier results (lower index) get higher scores
-                    // This preserves fzf's natural sorting
-                    const score = 1000 - index;
-                    
-                    searchResults.push({
-                        uri,
-                        score
-                    });
+                    searchResults.push({ uri });
                 }
             });
         });
