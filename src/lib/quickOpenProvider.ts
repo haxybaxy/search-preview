@@ -21,8 +21,12 @@ export class QuickOpenProvider {
      * @param mode 'standard' for normal quick open, 'recent' for most recently used editors
      */
     public async show(mode: 'standard' | 'recent'): Promise<void> {
-        // Create the quick pick UI
         const quickPick = vscode.window.createQuickPick<SearchQuickPickItem>();
+        
+        // Force VSCode to show everything
+        quickPick.matchOnDescription = false;
+        quickPick.matchOnDetail = true;
+        quickPick.sortByLabel = false;
         
         // Set placeholder text based on mode
         if (mode === 'standard') {
@@ -31,10 +35,6 @@ export class QuickOpenProvider {
             quickPick.placeholder = 'Search open editors by most recently used';
         }
         
-        quickPick.matchOnDescription = true;
-        quickPick.matchOnDetail = true;
-        
-        // Show progress indicator while loading initial files
         quickPick.busy = true;
         
         // Enable preview mode to prevent files from being added to history during preview
@@ -115,38 +115,44 @@ export class QuickOpenProvider {
      * Handles search for the standard quick open mode
      */
     private async handleStandardSearch(quickPick: vscode.QuickPick<SearchQuickPickItem>, value: string): Promise<void> {
-        // Show busy indicator
         quickPick.busy = true;
         
         try {
-            // Get all workspace files for filename matching, respecting exclude settings
             const excludePattern = SettingsManager.getGlobExcludePattern();
             const files = await vscode.workspace.findFiles('**/*', excludePattern);
             
-            // Use fuzzy search with fzf - let fzf handle all matching and sorting
+            // Let fzf do ALL the filtering
             const matchResults = await fuzzySearchFiles(files, value);
                 
-            // Convert to quick pick items
             const filenameResults = matchResults.map(({ uri }) => {
                 const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
                 const fileIcon = getFileIcon(uri.fsPath);
+                const searchablePath = relativePath.replace(/[\/\\]/g, '');
                 
                 return {
-                    label: `${fileIcon} ${path.basename(uri.fsPath)}`,
-                    description: getFileLocation(relativePath),
+                    label: `${fileIcon} ${relativePath}`,
+                    description: '', 
                     data: {
                         filePath: uri.fsPath,
+                        searchablePath,
+                        fileName: path.basename(uri.fsPath),
                         linePos: 0,
                         colPos: 0,
                         searchText: value,
-                        type: 'file' as 'file' | 'content'
+                        type: 'file' as 'file' 
                     }
                 };
             });
             
-            // Set the items in the quick pick
+            // Sort by path length while preserving fzf ordering within same lengths
+            const sortedResults = filenameResults.sort((a, b) => {
+                const aLength = a.label.length;
+                const bLength = b.label.length;
+                return aLength - bLength;
+            });
+            
             const maxResults = SettingsManager.getMaxResults();
-            quickPick.items = filenameResults.slice(0, maxResults);
+            quickPick.items = sortedResults.slice(0, maxResults);
         } catch (error) {
             console.error('Error during search:', error);
             quickPick.items = [];
@@ -254,9 +260,11 @@ export class QuickOpenProvider {
                         detail: 'currently open',
                         data: {
                             filePath: uri.fsPath,
+                            fileName: path.basename(uri.fsPath),
+                            searchablePath: relativePath.replace(/[\/\\]/g, ''),
                             linePos: 0,
                             colPos: 0,
-                            type: 'file' as 'file' | 'content'
+                            type: 'file' as 'file' 
                         }
                     });
                 }
@@ -283,7 +291,7 @@ export class QuickOpenProvider {
                         filePath: uri.fsPath,
                         linePos: 0,
                         colPos: 0,
-                        type: 'file' as 'file' | 'content'
+                        type: 'file' as 'file' 
                     }
                 });
             }
@@ -335,9 +343,11 @@ export class QuickOpenProvider {
                             detail: isCurrentlyOpen ? 'currently open' : 'recently used',
                             data: {
                                 filePath: historyItem.uri.fsPath,
+                                fileName: path.basename(historyItem.uri.fsPath),
+                                searchablePath: relativePath.replace(/[\/\\]/g, ''),
                                 linePos: historyItem.linePos || 0,
                                 colPos: historyItem.colPos || 0,
-                                type: 'file' as 'file' | 'content'
+                                type: 'file' as 'file' 
                             }
                         });
                     } catch (error) {
