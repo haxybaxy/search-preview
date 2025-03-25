@@ -27,7 +27,7 @@ export class QuickOpenProvider {
         // Force VSCode to show everything
         quickPick.matchOnDescription = false;
         quickPick.matchOnDetail = true;
-        quickPick.sortByLabel = false;
+        (quickPick as any).sortByLabel = false;
         
         // Set placeholder text based on mode
         if (mode === 'standard') {
