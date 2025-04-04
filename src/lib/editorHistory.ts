@@ -15,6 +15,13 @@ export class EditorHistoryManager {
                 this.updateHistory(editor);
             }
         });
+
+        // Listen for editor changes
+        vscode.window.onDidChangeActiveTextEditor(editor => {
+            if (editor && editor.document.uri.scheme === 'file' && !this.previewMode) {
+                this.updateHistory(editor);
+            }
+        });
     }
 
     /**
