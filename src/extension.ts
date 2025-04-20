@@ -9,7 +9,7 @@ import { QuickOpenProvider } from './lib/quickOpenProvider';
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 	// Create and initialize the editor history manager
-	const editorHistoryManager = new EditorHistoryManager();
+	const editorHistoryManager = new EditorHistoryManager(context);
 	editorHistoryManager.registerListeners(context);
 	
 	// Create the quick open provider
