@@ -59,12 +59,17 @@ export class EditorHistoryManager {
         // Create a Uri from the file path
         const uri = vscode.Uri.file(filePath);
         
+        // Get the relative path in the same format as standard search
+        const relativePath = vscode.workspace.asRelativePath(filePath);
+        
         // Mark that this was the last opened file, so even if it becomes active later
         // we know it should be added to history
         this.lastOpenedFile = filePath;
         
         // Remove this URI from the history if it exists
-        const existingIndex = this.history.findIndex(item => item.uri.fsPath === uri.fsPath);
+        const existingIndex = this.history.findIndex(item => 
+            vscode.workspace.asRelativePath(item.uri.fsPath) === relativePath
+        );
         if (existingIndex >= 0) {
             this.history.splice(existingIndex, 1);
         }
@@ -74,7 +79,8 @@ export class EditorHistoryManager {
             uri: uri,
             timestamp: Date.now(),
             linePos: linePos,
-            colPos: colPos
+            colPos: colPos,
+            relativePath: relativePath // Store the relative path for consistent searching
         });
         
         // Trim history if it's too long
@@ -100,8 +106,13 @@ export class EditorHistoryManager {
         // Reset the last opened file tracking
         this.lastOpenedFile = undefined;
         
+        // Get the relative path in the same format as standard search
+        const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+        
         // Remove this URI from the history if it exists
-        const existingIndex = this.history.findIndex(item => item.uri.fsPath === uri.fsPath);
+        const existingIndex = this.history.findIndex(item => 
+            vscode.workspace.asRelativePath(item.uri.fsPath) === relativePath
+        );
         if (existingIndex >= 0) {
             this.history.splice(existingIndex, 1);
         }
@@ -111,7 +122,8 @@ export class EditorHistoryManager {
             uri: uri,
             timestamp: Date.now(),
             linePos: editor.selection.active.line,
-            colPos: editor.selection.active.character
+            colPos: editor.selection.active.character,
+            relativePath: relativePath // Store the relative path for consistent searching
         });
         
         // Trim history if it's too long

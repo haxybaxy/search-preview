@@ -23,6 +23,7 @@ export interface SearchQuickPickItem extends vscode.QuickPickItem {
 export interface EditorHistoryItem {
 	uri: vscode.Uri;
 	timestamp: number;
-	linePos?: number;
-	colPos?: number;
+	linePos: number;
+	colPos: number;
+	relativePath: string;
 } 
