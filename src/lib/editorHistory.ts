@@ -10,7 +10,8 @@ export class EditorHistoryManager {
     private storage: vscode.Memento;
 
     constructor(context: vscode.ExtensionContext) {
-        this.storage = context.globalState;
+        // Use workspaceState instead of globalState for project-specific storage
+        this.storage = context.workspaceState;
         
         // Load saved history and convert string URIs back to vscode.Uri objects
         const savedHistory = this.storage.get<EditorHistoryItem[]>('editorHistory', []);
