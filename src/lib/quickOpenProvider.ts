@@ -336,9 +336,8 @@ export class QuickOpenProvider {
                         );
                         
                         results.push({
-                            label: `${fileIcon} ${path.basename(historyItem.uri.fsPath)}`,
+                            label: `${fileIcon} ${relativePath}`,
                             description: getFileLocation(relativePath),
-                            detail: isCurrentlyOpen ? 'currently open' : 'recently used',
                             data: {
                                 filePath: historyItem.uri.fsPath,
                                 fileName: path.basename(historyItem.uri.fsPath),
