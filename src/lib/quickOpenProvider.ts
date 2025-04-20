@@ -166,18 +166,12 @@ export class QuickOpenProvider {
      * Handles search for the most recently used editors mode
      */
     private async handleRecentEditorsSearch(quickPick: vscode.QuickPick<SearchQuickPickItem>, value: string): Promise<void> {
-        // Show busy indicator
         quickPick.busy = true;
         
         try {
-            // Get the currently active editor URI to exclude it
-            const activeEditor = vscode.window.activeTextEditor;
-            const activeEditorUri = activeEditor?.document.uri.fsPath;
-            
             // Get editor history items
             const historyItems = this.editorHistoryManager.getHistory().filter(item => {
-                return item.uri.scheme === 'file' && 
-                    (!activeEditorUri || item.uri.fsPath !== activeEditorUri);
+                return item.uri.scheme === 'file';
             });
             
             // Convert to URI array for fzf search
@@ -189,36 +183,39 @@ export class QuickOpenProvider {
                 historyItemsByPath.set(item.uri.fsPath, item);
             });
             
-            // Use fzf for searching
-            const searchResults = await fuzzySearchFiles(historyUris, value);
-            
-            // Convert to quick pick items
-            const quickPickItems = searchResults.map(({ uri }) => {
+            // Use fzf for searching, just like in standard search
+            const matchResults = await fuzzySearchFiles(historyUris, value);
+                
+            const filenameResults = matchResults.map(({ uri }) => {
                 const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
                 const fileIcon = getFileIcon(uri.fsPath);
+                const searchablePath = relativePath.replace(/[\/\\]/g, '');
                 const historyItem = historyItemsByPath.get(uri.fsPath);
                 
-                // Find whether this file is currently open
-                const isCurrentlyOpen = vscode.window.visibleTextEditors.some(
-                    editor => editor.document.uri.fsPath === uri.fsPath
-                );
-                
                 return {
-                    label: `${fileIcon} ${path.basename(uri.fsPath)}`,
-                    description: getFileLocation(relativePath),
-                    detail: isCurrentlyOpen ? 'currently open' : 'recently used',
+                    label: `${fileIcon} ${relativePath}`,
+                    description: '', 
                     data: {
                         filePath: uri.fsPath,
-                        linePos: historyItem.linePos || 0,
-                        colPos: historyItem.colPos || 0,
+                        searchablePath,
+                        fileName: path.basename(uri.fsPath),
+                        linePos: historyItem?.linePos || 0,
+                        colPos: historyItem?.colPos || 0,
                         searchText: value,
-                        type: 'file' as 'file' | 'content'
+                        type: 'file' as 'file' 
                     }
                 };
             });
             
-            // Set the quick pick items
-            quickPick.items = quickPickItems;
+            // Sort by path length while preserving fzf ordering within same lengths
+            const sortedResults = filenameResults.sort((a, b) => {
+                const aLength = a.label.length;
+                const bLength = b.label.length;
+                return aLength - bLength;
+            });
+            
+            const maxResults = SettingsManager.getMaxResults();
+            quickPick.items = sortedResults.slice(0, maxResults);
         } catch (error) {
             console.error('Error during search:', error);
             quickPick.items = [];
@@ -339,9 +336,8 @@ export class QuickOpenProvider {
                         );
                         
                         results.push({
-                            label: `${fileIcon} ${path.basename(historyItem.uri.fsPath)}`,
+                            label: `${fileIcon} ${relativePath}`,
                             description: getFileLocation(relativePath),
-                            detail: isCurrentlyOpen ? 'currently open' : 'recently used',
                             data: {
                                 filePath: historyItem.uri.fsPath,
                                 fileName: path.basename(historyItem.uri.fsPath),

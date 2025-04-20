@@ -9,24 +9,6 @@ import { SettingsManager } from './settingsUtils';
 /**
  * Convert file URIs to SearchQuickPickItems
  */
-export function createFileSearchItems(files: vscode.Uri[], searchText?: string): SearchQuickPickItem[] {
-    return files.map(file => {
-        const relativePath = vscode.workspace.asRelativePath(file.fsPath);
-        const fileIcon = getFileIcon(file.fsPath);
-        
-        return {
-            label: `${fileIcon} ${path.basename(file.fsPath)}`,
-            description: getFileLocation(relativePath),
-            data: {
-                filePath: file.fsPath,
-                linePos: 0,
-                colPos: 0,
-                searchText: searchText,
-                type: 'file'
-            }
-        };
-    });
-}
 
 // Utility function to check if a process exists
 export function checkKillProcess(spawnRegistry: any[]) {
