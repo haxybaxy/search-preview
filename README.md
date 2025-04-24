@@ -31,9 +31,9 @@ https://github.com/user-attachments/assets/70a98df7-5124-41b9-89e4-8affcc3c6dff
 7. Press Enter to select and open the file permanently
 8. Press Escape to cancel and return to your previous file
 
-### Most Recently Used Editors with Preview
+### Most Recently Used Editors with Preview (Oldfile Preview)
 
-1. Search `Search Preview Show All Editors by Most Recently Used with Preview` in the command pallete to open the most recently used editors dialog (Look below to make keybinds work)
+1. Search `Search Preview: Show All Editors by Most Recently Used with Preview` in the command pallete to open the most recently used editors dialog (Look below to make keybinds work)
 2. You'll see a list of currently open editors sorted by most recently used
 3. Navigate through the list to preview each file
 4. Type to filter the list of open editors using fuzzy matching
@@ -106,11 +106,6 @@ If you're using the VSCode Vim extension, you can integrate Search Preview into 
 
 - VS Code 1.90.0 or higher
 
-## Known Issues (Will get on a fix ASAP)
-
-- Binary files (images, PDFs, etc.) are excluded from preview but can still be opened
-- Jupyter Notebooks open as JSON
-- Search is pretty slow, need to switch to fzf
 
 ### Building the Extension
 
