@@ -7,8 +7,19 @@ export class EditorHistoryManager {
     private previewMode = false;
     private previewedFiles = new Set<string>();
     private lastOpenedFile?: string;
+    private storage: vscode.Memento;
 
-    constructor() {
+    constructor(context: vscode.ExtensionContext) {
+        // Use workspaceState instead of globalState for project-specific storage
+        this.storage = context.workspaceState;
+        
+        // Load saved history and convert string URIs back to vscode.Uri objects
+        const savedHistory = this.storage.get<EditorHistoryItem[]>('editorHistory', []);
+        this.history = savedHistory.map(item => ({
+            ...item,
+            uri: vscode.Uri.parse(item.uri.toString())
+        }));
+
         // Initialize with currently open editors
         vscode.window.visibleTextEditors.forEach(editor => {
             if (editor.document.uri.scheme === 'file') {
@@ -87,6 +98,9 @@ export class EditorHistoryManager {
         if (this.history.length > this.MAX_HISTORY_SIZE) {
             this.history.pop();
         }
+
+        // Save the updated history
+        this.saveHistory();
     }
 
     /**
@@ -129,6 +143,25 @@ export class EditorHistoryManager {
         // Trim history if it's too long
         if (this.history.length > this.MAX_HISTORY_SIZE) {
             this.history.pop();
+        }
+
+        // Save the updated history
+        this.saveHistory();
+    }
+
+    /**
+     * Save the current history to persistent storage
+     */
+    private async saveHistory(): Promise<void> {
+        try {
+            // Convert URIs to strings before saving
+            const historyToSave = this.history.map(item => ({
+                ...item,
+                uri: item.uri.toString()
+            }));
+            await this.storage.update('editorHistory', historyToSave);
+        } catch (error) {
+            console.error('Error saving editor history:', error);
         }
     }
 
