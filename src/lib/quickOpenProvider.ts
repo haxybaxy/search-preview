@@ -153,15 +153,9 @@ export class QuickOpenProvider {
                 };
             });
             
-            // Sort by path length while preserving fzf ordering within same lengths
-            const sortedResults = filenameResults.sort((a, b) => {
-                const aLength = a.label.length;
-                const bLength = b.label.length;
-                return aLength - bLength;
-            });
-            
+            // Respect fzf's original ranking, no additional sorting
             const maxResults = SettingsManager.getMaxResults();
-            quickPick.items = sortedResults.slice(0, maxResults);
+            quickPick.items = filenameResults.slice(0, maxResults);
         } catch (error) {
             console.error('Error during search:', error);
             quickPick.items = [];
@@ -214,15 +208,9 @@ export class QuickOpenProvider {
                 };
             });
             
-            // Sort by path length while preserving fzf ordering within same lengths
-            const sortedResults = filenameResults.sort((a, b) => {
-                const aLength = a.label.length;
-                const bLength = b.label.length;
-                return aLength - bLength;
-            });
-            
+            // Respect fzf's original ranking – no additional sorting
             const maxResults = SettingsManager.getMaxResults();
-            quickPick.items = sortedResults.slice(0, maxResults);
+            quickPick.items = filenameResults.slice(0, maxResults);
         } catch (error) {
             console.error('Error during search:', error);
             quickPick.items = [];
