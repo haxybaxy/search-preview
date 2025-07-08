@@ -5,7 +5,6 @@ import { EditorHistoryManager } from './editorHistory';
 import { PreviewManager } from './previewManager';
 import { fuzzySearchFiles } from '../utils/searchUtils';
 import { getFileLocation } from '../utils/fileUtils';
-import { getFileIcon } from '../utils/iconUtils';
 import { SettingsManager } from '../utils/settingsUtils';
 
 export class QuickOpenProvider {
@@ -59,7 +58,7 @@ export class QuickOpenProvider {
         // Load initial files list based on mode
         try {
             if (mode === 'standard') {
-                await this.loadInitialFilesList(quickPick);
+                await this.handleStandardSearch(quickPick, '');
             } else {
                 await this.loadRecentEditorsList(quickPick);
             }
@@ -72,7 +71,7 @@ export class QuickOpenProvider {
             if (!value || value.length < 2) {
                 // Restore the initial files list if user clears the input
                 if (mode === 'standard') {
-                    await this.loadInitialFilesList(quickPick);
+                    await this.handleStandardSearch(quickPick, '');
                 } else {
                     await this.loadRecentEditorsList(quickPick);
                 }
@@ -127,11 +126,10 @@ export class QuickOpenProvider {
                 
             const filenameResults = matchResults.map(({ uri }) => {
                 const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
-                const fileIcon = getFileIcon(uri.fsPath);
                 const searchablePath = relativePath.replace(/[\/\\]/g, '');
                 
                 return {
-                    label: `${fileIcon} ${relativePath}`,
+                    label: `${relativePath}`,
                     description: '', 
                     data: {
                         filePath: uri.fsPath,
@@ -188,12 +186,11 @@ export class QuickOpenProvider {
                 
             const filenameResults = matchResults.map(({ uri }) => {
                 const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
-                const fileIcon = getFileIcon(uri.fsPath);
                 const searchablePath = relativePath.replace(/[\/\\]/g, '');
                 const historyItem = historyItemsByPath.get(uri.fsPath);
                 
                 return {
-                    label: `${fileIcon} ${relativePath}`,
+                    label: `${relativePath}`,
                     description: '', 
                     data: {
                         filePath: uri.fsPath,
@@ -224,85 +221,6 @@ export class QuickOpenProvider {
         }
     }
     
-    /**
-     * Loads the initial list of files for standard quick open
-     */
-    private async loadInitialFilesList(quickPick: vscode.QuickPick<SearchQuickPickItem>): Promise<void> {
-        // Show loading indicator
-        quickPick.busy = true;
-        
-        try {
-            // First try to get all workspace files, respecting exclude settings
-            const excludePattern = SettingsManager.getGlobExcludePattern();
-            const maxResults = SettingsManager.getMaxResults();
-            const allFiles = await vscode.workspace.findFiles('**/*', excludePattern, maxResults * 2);
-            
-            // Get currently open text editors to prioritize them
-            const openEditors = vscode.window.visibleTextEditors.map(editor => editor.document.uri);
-            
-            // Create a Map to track which files are already added
-            const addedFiles = new Map<string, boolean>();
-            const results: SearchQuickPickItem[] = [];
-            
-            // First add currently open files at the top
-            for (const uri of openEditors) {
-                if (uri.scheme === 'file' && !addedFiles.has(uri.fsPath) && 
-                    !SettingsManager.shouldExcludeFile(uri.fsPath)) {
-                    addedFiles.set(uri.fsPath, true);
-                    const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
-                    const fileIcon = getFileIcon(uri.fsPath);
-                    
-                    results.push({
-                        label: `${fileIcon} ${path.basename(uri.fsPath)}`,
-                        description: getFileLocation(relativePath),
-                        detail: 'currently open',
-                        data: {
-                            filePath: uri.fsPath,
-                            fileName: path.basename(uri.fsPath),
-                            searchablePath: relativePath.replace(/[\/\\]/g, ''),
-                            linePos: 0,
-                            colPos: 0,
-                            type: 'file' as 'file' 
-                        }
-                    });
-                }
-            }
-            
-            // Add remaining files without custom prioritization
-            const remainingFiles = allFiles
-                .filter(file => 
-                    !addedFiles.has(file.fsPath) && 
-                    !SettingsManager.shouldExcludeFile(file.fsPath)
-                )
-                .slice(0, maxResults); // Limit based on settings
-            
-            // Add the filtered files
-            for (const uri of remainingFiles) {
-                addedFiles.set(uri.fsPath, true);
-                const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
-                const fileIcon = getFileIcon(uri.fsPath);
-                
-                results.push({
-                    label: `${fileIcon} ${path.basename(uri.fsPath)}`,
-                    description: getFileLocation(relativePath),
-                    data: {
-                        filePath: uri.fsPath,
-                        linePos: 0,
-                        colPos: 0,
-                        type: 'file' as 'file' 
-                    }
-                });
-            }
-            
-            // Update quickpick items
-            quickPick.items = results;
-        } catch (error) {
-            console.error('Error loading initial files:', error);
-            quickPick.items = [];
-        } finally {
-            quickPick.busy = false;
-        }
-    }
     
     /**
      * Loads the list of most recently used editors from the tracked history
@@ -328,7 +246,6 @@ export class QuickOpenProvider {
                         await vscode.workspace.fs.stat(historyItem.uri);
                         
                         const relativePath = vscode.workspace.asRelativePath(historyItem.uri.fsPath);
-                        const fileIcon = getFileIcon(historyItem.uri.fsPath);
                         
                         // Find whether this file is currently open
                         const isCurrentlyOpen = vscode.window.visibleTextEditors.some(
@@ -336,7 +253,7 @@ export class QuickOpenProvider {
                         );
                         
                         results.push({
-                            label: `${fileIcon} ${relativePath}`,
+                            label: `${relativePath}`,
                             description: getFileLocation(relativePath),
                             data: {
                                 filePath: historyItem.uri.fsPath,
