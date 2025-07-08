@@ -1,9 +1,5 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { spawn } from 'child_process';
-import { SearchQuickPickItem } from '../types';
-import { getFileLocation } from './fileUtils';
-import { getFileIcon } from './iconUtils';
 import { SettingsManager } from './settingsUtils';
 
 /**
@@ -42,14 +38,18 @@ export async function fuzzySearchFiles(files: vscode.Uri[], searchText: string):
             pathToUriMap.set(vscode.workspace.asRelativePath(file.fsPath), file);
         });
         
-        // Create input for fzf
+        // Create input for fzf (newline-separated list)
         const fzfInput = filePaths.join('\n');
         
-        // Prepare the fzf command
-        const fzfCmd = `echo "${fzfInput}" | fzf --filter "${searchText}"`;
-        
+        // Spawn fzf directly and pipe the file list through stdin. This avoids
+        // expensive shell interpolation and command-line length limits.
         const spawnRegistry: any[] = [];
-        const spawnProcess = spawn(fzfCmd, [], { shell: true });
+        const spawnProcess = spawn('fzf', ['--filter', searchText], {
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+        // Feed the file list to fzf and close stdin.
+        spawnProcess.stdin.write(fzfInput);
+        spawnProcess.stdin.end();
         spawnRegistry.push(spawnProcess);
         
         const searchResults: { uri: vscode.Uri }[] = [];

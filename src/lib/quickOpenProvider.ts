@@ -10,6 +10,8 @@ import { SettingsManager } from '../utils/settingsUtils';
 export class QuickOpenProvider {
     private editorHistoryManager: EditorHistoryManager;
     private previewManager: PreviewManager;
+    // Debounce timer for search input
+    private searchDebounceTimer?: NodeJS.Timeout;
     
     constructor(editorHistoryManager: EditorHistoryManager) {
         this.editorHistoryManager = editorHistoryManager;
@@ -67,23 +69,31 @@ export class QuickOpenProvider {
         }
         
         // Update results based on user input
-        quickPick.onDidChangeValue(async (value) => {
-            if (!value || value.length < 2) {
-                // Restore the initial files list if user clears the input
-                if (mode === 'standard') {
-                    await this.handleStandardSearch(quickPick, '');
-                } else {
-                    await this.loadRecentEditorsList(quickPick);
+        quickPick.onDidChangeValue((value) => {
+            // Clear any pending search
+            if (this.searchDebounceTimer) {
+                clearTimeout(this.searchDebounceTimer);
+            }
+
+            // Debounce execution to avoid kicking off a search on every single keystroke
+            this.searchDebounceTimer = setTimeout(async () => {
+                if (!value || value.length < 2) {
+                    // Restore the initial files list if user clears the input
+                    if (mode === 'standard') {
+                        await this.handleStandardSearch(quickPick, '');
+                    } else {
+                        await this.loadRecentEditorsList(quickPick);
+                    }
+                    return;
                 }
-                return;
-            }
-            
-            // Handle search for both modes
-            if (mode === 'standard') {
-                await this.handleStandardSearch(quickPick, value);
-            } else {
-                await this.handleRecentEditorsSearch(quickPick, value);
-            }
+
+                // Handle search for both modes
+                if (mode === 'standard') {
+                    await this.handleStandardSearch(quickPick, value);
+                } else {
+                    await this.handleRecentEditorsSearch(quickPick, value);
+                }
+            }, 50); // 50 ms debounce delay – tweak in settings if desired
         });
 
         // Set up the on change handler to show file previews
