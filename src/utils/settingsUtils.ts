@@ -1,6 +1,51 @@
 import * as vscode from 'vscode';
 
 /**
+ * Utility to escape regex metacharacters in a string.
+ */
+function escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Convert a simple glob pattern (limited ** and *) to a RegExp.
+ * This is NOT a full glob implementation but covers the common cases we use
+ * in the default config and keeps it fast.
+ */
+function globToRegExp(glob: string): RegExp {
+    // Normalise path separators so we only handle '/'
+    const normalised = glob.replace(/\\/g, '/');
+
+    // First escape all regex metacharacters
+    let regexStr = escapeRegex(normalised);
+
+    // Replace escaped glob tokens with regex equivalents
+    regexStr = regexStr
+        .replace(/\\\*\\\*/g, '.*')     // **  -> .*
+        .replace(/\\\*/g, '[^/]*');        // *   -> any chars except '/'
+
+    return new RegExp(regexStr);
+}
+
+// ----------------------------------------------------------------------------------
+// Cached, pre-compiled exclude matchers
+// ----------------------------------------------------------------------------------
+
+let compiledDirRegexes: RegExp[] | null = null;
+let compiledPatternRegexes: RegExp[] | null = null;
+
+function buildExcludeRegexCaches() {
+    // Compile directory matchers: we just look for '/<dir>/' anywhere in the path
+    compiledDirRegexes = SettingsManager.getExcludeDirectories().map(dir => {
+        const escaped = escapeRegex(dir);
+        return new RegExp(`/${escaped}/`);
+    });
+
+    // Compile file pattern matchers
+    compiledPatternRegexes = SettingsManager.getExcludePatterns().map(glob => globToRegExp(glob));
+}
+
+/**
  * Helper class to read extension settings
  */
 export class SettingsManager {
@@ -60,28 +105,25 @@ export class SettingsManager {
      */
     public static shouldExcludeFile(filePath: string): boolean {
         const normalizedPath = filePath.replace(/\\/g, '/');
-        const excludeDirectories = this.getExcludeDirectories();
-        
-        // Check if file is in an excluded directory
-        for (const dir of excludeDirectories) {
-            if (normalizedPath.includes(`/${dir}/`)) {
+        // Lazily build caches on first use
+        if (!compiledDirRegexes || !compiledPatternRegexes) {
+            buildExcludeRegexCaches();
+        }
+
+        // Directory based exclusions
+        for (const dirRegex of compiledDirRegexes!) {
+            if (dirRegex.test(normalizedPath)) {
                 return true;
             }
         }
-        
-        // Check if file matches an excluded pattern
-        // Note: This is a simplified version and won't handle all glob patterns
-        // For more complete glob matching, consider using a library like 'minimatch'
-        const excludePatterns = this.getExcludePatterns()
-            .map(pattern => pattern.replace(/\*\*/g, ''))
-            .map(pattern => pattern.replace(/\*/g, ''));
-        
-        for (const pattern of excludePatterns) {
-            if (pattern && normalizedPath.includes(pattern)) {
+
+        // Glob/pattern based exclusions
+        for (const patRegex of compiledPatternRegexes!) {
+            if (patRegex.test(normalizedPath)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 } 
