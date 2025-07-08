@@ -12,17 +12,19 @@ https://github.com/user-attachments/assets/70a98df7-5124-41b9-89e4-8affcc3c6dff
 
 
 ## Features
-- Fuzzy search for files by name with real-time preview
+- Fuzzy search for files by name with real-time preview, direct replacement for Ctrl/Command + P file search
 - Shows open files and workspace files immediately when opened
-- Browse most recently used editors with preview functionality
+- Browse most recently used editors (Oldfiles in telescope) with preview functionality
 - Preserves focus on the search dialog while previewing files
-- Works like the default quick open but with preview capability
 - Returns to your previous file when canceling a search
 - Configurable exclusion patterns for directories and files
 
+## Upcoming Features
+- Open ~~buffer~~ editor picker with preview
+
 ## How to Use
 
-### Quick Open with Preview 
+### Quick Open with Preview (File Fuzzy Finder)
 
 1. Search `Search Preview: Quick Open with Preview` in the command pallete to open the enhanced quick open dialog (Look below to make keybinds work)
 2. You'll immediately see a list of currently open files and other workspace files
