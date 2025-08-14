@@ -3,6 +3,8 @@
 import * as vscode from 'vscode';
 import { EditorHistoryManager } from './lib/editorHistory';
 import { QuickOpenProvider } from './lib/quickOpenProvider';
+import { invalidateFileCache } from './utils/searchUtils';
+import { SettingsManager } from './utils/settingsUtils';
 
 
 // This method is called when your extension is activated
@@ -37,6 +39,30 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	);
 	context.subscriptions.push(openSearchSettingsCommand);
+
+	// Set up file watcher for cache invalidation (telescope-style)
+	const config = SettingsManager.getFdConfig();
+	if (config.enableFileWatcher) {
+		// Watch for file creation/deletion to invalidate cache
+		const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*', false, true, false);
+		
+		// Debounce cache invalidation to avoid too frequent updates
+		let invalidateTimer: NodeJS.Timeout | undefined;
+		const debouncedInvalidate = () => {
+			if (invalidateTimer) {
+				clearTimeout(invalidateTimer);
+			}
+			invalidateTimer = setTimeout(() => {
+				invalidateFileCache();
+			}, 1000); // 1 second debounce
+		};
+		
+		fileWatcher.onDidCreate(debouncedInvalidate);
+		fileWatcher.onDidDelete(debouncedInvalidate);
+		
+		context.subscriptions.push(fileWatcher);
+		console.log('File watcher enabled for telescope-style cache invalidation');
+	}
 }
 
 // This method is called when your extension is deactivated

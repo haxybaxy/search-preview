@@ -48,6 +48,16 @@
     "configuration": {
       "title": "Search Preview",
       "properties": {
+        "searchPreview.search.fdPath": {
+          "type": "string",
+          "default": "fd",
+          "description": "Path to the fd executable. Use 'fd' if it's in your PATH, or provide full path."
+        },
+        "searchPreview.search.fdOptions": {
+          "type": "array",
+          "default": [],
+          "description": "Additional command line options to pass to fd"
+        },
         "searchPreview.search.excludeDirectories": {
           "type": "array",
           "default": ["node_modules", ".git", "venv", "env", "dist", "build"],
@@ -62,6 +72,26 @@
           "type": "number",
           "default": 100,
           "description": "Maximum number of search results to display"
+        },
+        "searchPreview.search.timeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "Timeout for fd search operations in milliseconds"
+        },
+        "searchPreview.search.enableJsonOutput": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable JSON output from fd for better parsing (requires fd 8.0+)"
+        },
+        "searchPreview.search.cacheTimeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "File list cache timeout in milliseconds (telescope-style caching)"
+        },
+        "searchPreview.search.enableFileWatcher": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable file system watcher to invalidate cache when files change"
         }
       }
     }

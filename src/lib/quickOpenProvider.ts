@@ -3,7 +3,7 @@ import * as path from 'path';
 import { SearchQuickPickItem } from '../types';
 import { EditorHistoryManager } from './editorHistory';
 import { PreviewManager } from './previewManager';
-import { fuzzySearchFiles, searchWorkspaceWithFd } from '../utils/searchUtils';
+import { fuzzySearchFiles, searchWorkspaceWithFd, cancelFdSearches, isSearchInProgress } from '../utils/searchUtils';
 import { getFileLocation } from '../utils/fileUtils';
 import { SettingsManager } from '../utils/settingsUtils';
 
@@ -126,6 +126,9 @@ export class QuickOpenProvider {
         
         // Handle when the picker is closed
         quickPick.onDidHide(() => {
+            // Cancel any ongoing searches for better performance
+            cancelFdSearches();
+            
             // Disable preview mode when the quick pick is closed
             this.previewManager.setPreviewMode(false);
             

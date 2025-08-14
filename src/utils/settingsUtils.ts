@@ -46,9 +46,74 @@ function buildExcludeRegexCaches() {
 }
 
 /**
- * Helper class to read extension settings
+ * Configuration interface for fd search parameters
+ */
+export interface FdConfig {
+    fdPath: string;
+    fdOptions: string[];
+    excludeDirectories: string[];
+    excludePatterns: string[];
+    maxResults: number;
+    timeout: number;
+    enableJsonOutput: boolean;
+    cacheTimeout: number;
+    enableFileWatcher: boolean;
+}
+
+/**
+ * Helper class to read extension settings with dynamic configuration support
  */
 export class SettingsManager {
+    private static cachedConfig: FdConfig | null = null;
+    private static lastConfigUpdate = 0;
+    private static readonly CONFIG_CACHE_TTL = 5000; // 5 seconds
+    
+    /**
+     * Get the current fd configuration with caching for performance
+     */
+    public static getFdConfig(): FdConfig {
+        const now = Date.now();
+        
+        // Return cached config if still valid
+        if (this.cachedConfig && (now - this.lastConfigUpdate) < this.CONFIG_CACHE_TTL) {
+            return this.cachedConfig;
+        }
+        
+        // Rebuild config
+        const config = vscode.workspace.getConfiguration('searchPreview.search');
+        
+        this.cachedConfig = {
+            fdPath: this.getFdPath(),
+            fdOptions: config.get<string[]>('fdOptions', []),
+            excludeDirectories: this.getExcludeDirectories(),
+            excludePatterns: this.getExcludePatterns(),
+            maxResults: this.getMaxResults(),
+            timeout: config.get<number>('timeout', 30000),
+            enableJsonOutput: config.get<boolean>('enableJsonOutput', false),
+            cacheTimeout: config.get<number>('cacheTimeout', 30000),
+            enableFileWatcher: config.get<boolean>('enableFileWatcher', true)
+        };
+        
+        this.lastConfigUpdate = now;
+        return this.cachedConfig;
+    }
+    
+    /**
+     * Clear configuration cache to force reload
+     */
+    public static clearConfigCache(): void {
+        this.cachedConfig = null;
+        this.lastConfigUpdate = 0;
+    }
+    
+    /**
+     * Get the fd executable path
+     */
+    public static getFdPath(): string {
+        return vscode.workspace
+            .getConfiguration('searchPreview.search')
+            .get<string>('fdPath', 'fd');
+    }
     /**
      * Get directories to exclude from search
      */
