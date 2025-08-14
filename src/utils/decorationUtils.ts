@@ -17,6 +17,11 @@ export class DecorationManager {
      * Highlight a specific line in the editor
      */
     public highlightLine(editor: vscode.TextEditor, lineNumber: number): void {
+        // Dispose previous decoration to avoid leaks
+        if (this.lastHighlightDecoration) {
+            this.lastHighlightDecoration.dispose();
+            this.lastHighlightDecoration = undefined;
+        }
         const lineRange = editor.document.lineAt(lineNumber).range;
         this.lastHighlightDecoration = vscode.window.createTextEditorDecorationType({
             backgroundColor: new vscode.ThemeColor('editor.selectionBackground'),

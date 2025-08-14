@@ -3,7 +3,7 @@ import * as path from 'path';
 import { SearchQuickPickItem } from '../types';
 import { EditorHistoryManager } from './editorHistory';
 import { PreviewManager } from './previewManager';
-import { fuzzySearchFiles } from '../utils/searchUtils';
+import { fuzzySearchFiles, searchWorkspaceWithFd } from '../utils/searchUtils';
 import { getFileLocation } from '../utils/fileUtils';
 import { SettingsManager } from '../utils/settingsUtils';
 
@@ -12,10 +12,84 @@ export class QuickOpenProvider {
     private previewManager: PreviewManager;
     // Debounce timer for search input
     private searchDebounceTimer?: NodeJS.Timeout;
+
+    // Cached list of all workspace files (URIs)
+    private allFiles: vscode.Uri[] = [];
+
+    // Promise that resolves once the initial workspace scan completes
+    private allFilesReady: Promise<void>;
+
+    // Cache of frequently-used metadata so we do not rebuild objects every search
+    private fileMetaCache = new Map<string, {
+        relativePath: string;
+        searchablePath: string;
+        fileName: string;
+    }>();
+
+    // Watcher that keeps the cache in sync with the workspace
+    private fileWatcher?: vscode.FileSystemWatcher;
     
     constructor(editorHistoryManager: EditorHistoryManager) {
         this.editorHistoryManager = editorHistoryManager;
         this.previewManager = new PreviewManager(editorHistoryManager);
+
+        // Kick off initial workspace scan *once*
+        this.allFilesReady = this.initialiseFileCache();
+    }
+
+    /**
+     * Build the initial file cache and keep it in sync with the workspace.
+     */
+    private async initialiseFileCache(): Promise<void> {
+        const excludePattern = SettingsManager.getGlobExcludePattern();
+
+        try {
+            // One-off disk hit
+            this.allFiles = await vscode.workspace.findFiles('**/*', excludePattern);
+
+            // Build metadata cache
+            this.allFiles.forEach(uri => this.addFileMeta(uri));
+
+            // Keep cache fresh
+            this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+
+            this.fileWatcher.onDidCreate(uri => {
+                if (SettingsManager.shouldExcludeFile(uri.fsPath)) {
+                    return;
+                }
+                this.allFiles.push(uri);
+                this.addFileMeta(uri);
+            });
+
+            this.fileWatcher.onDidDelete(uri => {
+                this.allFiles = this.allFiles.filter(u => u.fsPath !== uri.fsPath);
+                this.fileMetaCache.delete(uri.fsPath);
+            });
+        } catch (error) {
+            console.error('Error initialising file cache:', error);
+        }
+    }
+
+    /**
+     * Helper to add an entry to the metadata cache.
+     */
+    private addFileMeta(uri: vscode.Uri): void {
+        const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
+        this.fileMetaCache.set(uri.fsPath, {
+            relativePath,
+            searchablePath: relativePath.replace(/[\/\\]/g, ''),
+            fileName: path.basename(uri.fsPath)
+        });
+    }
+
+    /**
+     * Utility to set QuickPick items without triggering VS Code's own filter.
+     */
+    private setQuickPickItems(quickPick: vscode.QuickPick<SearchQuickPickItem>, items: SearchQuickPickItem[]) {
+        const current = quickPick.value;
+        quickPick.value = '';
+        quickPick.items = items;
+        quickPick.value = current;
     }
     
     /**
@@ -27,7 +101,7 @@ export class QuickOpenProvider {
         
         // Force VSCode to show everything
         quickPick.matchOnDescription = false;
-        quickPick.matchOnDetail = true;
+        quickPick.matchOnDetail = false;
         (quickPick as any).sortByLabel = false;
         
         // Set placeholder text based on mode
@@ -38,7 +112,12 @@ export class QuickOpenProvider {
         }
         
         quickPick.busy = true;
-        
+
+        // Ensure the file cache is ready before first search (standard mode only)
+        if (mode === 'standard') {
+            await this.allFilesReady;
+        }
+
         // Enable preview mode to prevent files from being added to history during preview
         this.previewManager.setPreviewMode(true);
         
@@ -60,7 +139,8 @@ export class QuickOpenProvider {
         // Load initial files list based on mode
         try {
             if (mode === 'standard') {
-                await this.handleStandardSearch(quickPick, '');
+                // For empty search, show nothing
+                this.setQuickPickItems(quickPick, []);
             } else {
                 await this.loadRecentEditorsList(quickPick);
             }
@@ -78,9 +158,9 @@ export class QuickOpenProvider {
             // Debounce execution to avoid kicking off a search on every single keystroke
             this.searchDebounceTimer = setTimeout(async () => {
                 if (!value || value.length < 2) {
-                    // Restore the initial files list if user clears the input
                     if (mode === 'standard') {
-                        await this.handleStandardSearch(quickPick, '');
+                        // For empty search, show nothing
+                        this.setQuickPickItems(quickPick, []);
                     } else {
                         await this.loadRecentEditorsList(quickPick);
                     }
@@ -93,7 +173,7 @@ export class QuickOpenProvider {
                 } else {
                     await this.handleRecentEditorsSearch(quickPick, value);
                 }
-            }, 50); // 50 ms debounce delay – tweak in settings if desired
+            }, 120); // slightly higher debounce to reduce process churn
         });
 
         // Set up the on change handler to show file previews
@@ -126,36 +206,34 @@ export class QuickOpenProvider {
      */
     private async handleStandardSearch(quickPick: vscode.QuickPick<SearchQuickPickItem>, value: string): Promise<void> {
         quickPick.busy = true;
-        
+
         try {
-            const excludePattern = SettingsManager.getGlobExcludePattern();
-            const files = await vscode.workspace.findFiles('**/*', excludePattern);
-            
-            // Let fzf do ALL the filtering
-            const matchResults = await fuzzySearchFiles(files, value);
-                
-            const filenameResults = matchResults.map(({ uri }) => {
-                const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
-                const searchablePath = relativePath.replace(/[\/\\]/g, '');
-                
+            // Use fd for non-empty queries; fall back to cached list for empty input
+            const matchResults = value
+                ? await searchWorkspaceWithFd(value)
+                : await fuzzySearchFiles(this.allFiles, value);
+
+            const maxResults = SettingsManager.getMaxResults();
+            const filenameResults = matchResults.slice(0, maxResults).map(({ uri }) => {
+                const meta = this.fileMetaCache.get(uri.fsPath)!;
+
                 return {
-                    label: `${relativePath}`,
-                    description: '', 
+                    label: meta.relativePath,
+                    description: '',
                     data: {
                         filePath: uri.fsPath,
-                        searchablePath,
-                        fileName: path.basename(uri.fsPath),
+                        searchablePath: meta.searchablePath,
+                        fileName: meta.fileName,
                         linePos: 0,
                         colPos: 0,
                         searchText: value,
-                        type: 'file' as 'file' 
+                        type: 'file' as 'file'
                     }
                 };
             });
-            
-            // Respect fzf's original ranking, no additional sorting
-            const maxResults = SettingsManager.getMaxResults();
-            quickPick.items = filenameResults.slice(0, maxResults);
+
+            // Respect external ranking/no additional sorting
+            this.setQuickPickItems(quickPick, filenameResults);
         } catch (error) {
             console.error('Error during search:', error);
             quickPick.items = [];
@@ -185,10 +263,11 @@ export class QuickOpenProvider {
                 historyItemsByPath.set(item.uri.fsPath, item);
             });
             
-            // Use fzf for searching, just like in standard search
+            // In-memory fuzzy match for MRU list
             const matchResults = await fuzzySearchFiles(historyUris, value);
                 
-            const filenameResults = matchResults.map(({ uri }) => {
+            const maxResults = SettingsManager.getMaxResults();
+            const filenameResults = matchResults.slice(0, maxResults).map(({ uri }) => {
                 const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
                 const searchablePath = relativePath.replace(/[\/\\]/g, '');
                 const historyItem = historyItemsByPath.get(uri.fsPath);
@@ -208,9 +287,8 @@ export class QuickOpenProvider {
                 };
             });
             
-            // Respect fzf's original ranking – no additional sorting
-            const maxResults = SettingsManager.getMaxResults();
-            quickPick.items = filenameResults.slice(0, maxResults);
+            // Respect external ranking – no additional sorting
+            this.setQuickPickItems(quickPick, filenameResults);
         } catch (error) {
             console.error('Error during search:', error);
             quickPick.items = [];
@@ -270,7 +348,7 @@ export class QuickOpenProvider {
             }
             
             // Update quickpick items
-            quickPick.items = results;
+            this.setQuickPickItems(quickPick, results);
         } catch (error) {
             console.error('Error loading recent editors:', error);
             quickPick.items = [];

@@ -13,17 +13,7 @@ export function getFileLocation(relativePath: string): string {
 	return '';
 }
 
-/**
- * Set cursor position in a text editor
- */
-export function setCursorPosition(editor: vscode.TextEditor, line: number, column: number) {
-	const position = new vscode.Position(line, column);
-	editor.selection = new vscode.Selection(position, position);
-	editor.revealRange(
-		new vscode.Range(position, position),
-		vscode.TextEditorRevealType.InCenter
-	);
-}
+// Removed cursor positioning for performance
 
 /**
  * Escape regex special characters in a string

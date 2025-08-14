@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { SearchQuickPickItem } from '../types';
-import { setCursorPosition } from '../utils/fileUtils';
 import { DecorationManager } from '../utils/decorationUtils';
 import { EditorHistoryManager } from './editorHistory';
 
@@ -82,6 +81,13 @@ export class PreviewManager {
                 this.editorHistoryManager.addPreviewedFile(filePath);
             }
             
+            // Avoid reopening the same file/position repeatedly
+            const active = vscode.window.activeTextEditor;
+            if (active && active.document.uri.fsPath === filePath) {
+                this.decorationManager.highlightLine(active, linePos);
+                return;
+            }
+
             // Use VS Code's native open command to handle all file types appropriately
             const uri = vscode.Uri.file(filePath);
             const success = await vscode.commands.executeCommand('vscode.open', uri, {
@@ -94,9 +100,6 @@ export class PreviewManager {
             const editor = vscode.window.activeTextEditor;
             if (editor && editor.document.uri.fsPath === filePath) {
                 this.lastPreviewEditor = editor;
-                
-                // Position cursor and highlight line
-                setCursorPosition(editor, linePos, colPos);
                 this.decorationManager.highlightLine(editor, linePos);
             }
         } catch (error) {
@@ -141,7 +144,7 @@ export class PreviewManager {
             // For text files, VS Code will create a text editor and we can set the cursor
             const editor = vscode.window.activeTextEditor;
             if (editor && editor.document.uri.fsPath === filePath) {
-                setCursorPosition(editor, linePos, colPos);
+                // Keep editor position unchanged for speed
             }
             
             // Clear the previous active editor reference since we're opening a new file
