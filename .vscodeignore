@@ -12,3 +12,10 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# Local tooling state. Git ignores these, but vsce reads this file instead,
+# so they would otherwise be published to the Marketplace.
+.claude/**
+.fallow/**
+.editorconfig
+.github/**
