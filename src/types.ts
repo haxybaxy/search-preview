@@ -1,29 +1,32 @@
 import * as vscode from 'vscode';
 
 /**
- * Custom quick pick item interface for search results
+ * A file in the quick pick list, carrying the cursor position to restore when
+ * it is previewed or opened.
  */
 export interface SearchQuickPickItem extends vscode.QuickPickItem {
-	sortByLabel?: boolean;
-	data?: {
-		filePath: string;
-		searchablePath?: string;
-		fileName?: string;
-		linePos: number;
-		colPos: number;
-		searchText?: string;
-		type: 'file' | 'content';
-		lineText?: string;
-	};
+    data?: {
+        filePath: string;
+        linePos: number;
+        colPos: number;
+    };
 }
 
 /**
- * Interface for editor history tracking
+ * An entry in the most-recently-used editor history.
  */
 export interface EditorHistoryItem {
-	uri: vscode.Uri;
-	timestamp: number;
-	linePos: number;
-	colPos: number;
-	relativePath: string;
-} 
+    uri: vscode.Uri;
+    linePos: number;
+    colPos: number;
+}
+
+/**
+ * How an EditorHistoryItem is persisted. workspaceState round-trips through
+ * JSON, so the Uri survives only as a string and must be re-parsed on load.
+ */
+export interface StoredEditorHistoryItem {
+    uri: string;
+    linePos: number;
+    colPos: number;
+}
