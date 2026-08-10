@@ -1,43 +1,51 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { EditorHistoryManager } from './lib/editorHistory';
+import { FileIndex } from './lib/fileIndex';
 import { QuickOpenProvider } from './lib/quickOpenProvider';
+import { registerSettingsInvalidation } from './utils/settingsUtils';
+import { initLogger } from './utils/logger';
 
+/** Held so deactivate() can flush the debounced history write. */
+let historyManager: EditorHistoryManager | undefined;
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
-	// Create and initialize the editor history manager
-	const editorHistoryManager = new EditorHistoryManager(context);
-	editorHistoryManager.registerListeners(context);
-	
-	// Create the quick open provider
-	const quickOpenProvider = new QuickOpenProvider(editorHistoryManager);
+export function activate(context: vscode.ExtensionContext): void {
+    initLogger(context);
 
-	// Register standard quick open with preview command
-	const quickOpenCommand = vscode.commands.registerCommand(
-		'search-preview.quickOpenWithPreview', 
-		() => quickOpenProvider.show('standard')
-	);
-	context.subscriptions.push(quickOpenCommand);
+    const fileIndex = new FileIndex();
+    context.subscriptions.push(fileIndex);
 
-	// Register most recently used editors command
-	const recentEditorsCommand = vscode.commands.registerCommand(
-		'search-preview.showAllEditorsByMostRecentlyUsed', 
-		() => quickOpenProvider.show('recent')
-	);
-	context.subscriptions.push(recentEditorsCommand);
+    // The exclude settings decide what goes into the index, so a settings
+    // change has to drop both the compiled matchers and the cached file list.
+    registerSettingsInvalidation(context, () => fileIndex.invalidate());
 
-	// Add a command to open search settings
-	const openSearchSettingsCommand = vscode.commands.registerCommand(
-		'search-preview.openSearchSettings',
-		() => {
-			vscode.commands.executeCommand('workbench.action.openSettings', 'searchPreview.search');
-		}
-	);
-	context.subscriptions.push(openSearchSettingsCommand);
+    const editorHistoryManager = new EditorHistoryManager(context);
+    editorHistoryManager.registerListeners(context);
+    historyManager = editorHistoryManager;
+
+    const quickOpenProvider = new QuickOpenProvider(editorHistoryManager, fileIndex);
+    context.subscriptions.push(quickOpenProvider);
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'search-preview.quickOpenWithPreview',
+            () => quickOpenProvider.show('standard')
+        ),
+        vscode.commands.registerCommand(
+            'search-preview.showAllEditorsByMostRecentlyUsed',
+            () => quickOpenProvider.show('recent')
+        ),
+        vscode.commands.registerCommand(
+            'search-preview.openSearchSettings',
+            () => vscode.commands.executeCommand('workbench.action.openSettings', 'searchPreview.search')
+        )
+    );
+
+    // Walk the workspace now, in the background, so that opening the picker is
+    // never the thing that waits for it.
+    fileIndex.prewarm();
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {}
+export async function deactivate(): Promise<void> {
+    await historyManager?.flush();
+    historyManager = undefined;
+}

@@ -4,114 +4,102 @@ import { SearchQuickPickItem } from '../types';
 import { setCursorPosition } from '../utils/fileUtils';
 import { DecorationManager } from '../utils/decorationUtils';
 import { EditorHistoryManager } from './editorHistory';
+import { log } from '../utils/logger';
 
-export class PreviewManager {
-    private lastPreviewEditor?: vscode.TextEditor;
+export class PreviewManager implements vscode.Disposable {
     private decorationManager: DecorationManager;
     private editorHistoryManager?: EditorHistoryManager;
     private previousActiveEditor?: vscode.TextEditor;
-    
+
     constructor(editorHistoryManager?: EditorHistoryManager) {
         this.decorationManager = new DecorationManager();
         this.editorHistoryManager = editorHistoryManager;
     }
-    
+
     /**
      * Enable or disable preview mode to prevent files from being added to history
      */
     public setPreviewMode(enabled: boolean): void {
-        if (this.editorHistoryManager) {
-            this.editorHistoryManager.setPreviewMode(enabled);
-        }
-        
+        this.editorHistoryManager?.setPreviewMode(enabled);
+
         if (enabled) {
             // When entering preview mode, store active editor
             this.previousActiveEditor = vscode.window.activeTextEditor;
         } else {
             // When exiting preview mode, restore active editor
-            this.restoreActiveEditor();
+            void this.restoreActiveEditor();
         }
     }
-    
+
     /**
      * Restore the active editor that was open before preview started
      */
     private async restoreActiveEditor(): Promise<void> {
-        if (this.previousActiveEditor) {
-            try {
-                await vscode.window.showTextDocument(
-                    this.previousActiveEditor.document, 
-                    this.previousActiveEditor.viewColumn
-                );
-                
-                // Restore cursor position
-                if (vscode.window.activeTextEditor) {
-                    vscode.window.activeTextEditor.selection = this.previousActiveEditor.selection;
-                    vscode.window.activeTextEditor.revealRange(
-                        this.previousActiveEditor.selection,
-                        vscode.TextEditorRevealType.Default
-                    );
-                }
-                
-                this.previousActiveEditor = undefined;
-            } catch (error) {
-                // Ignore errors restoring the editor
-                console.log('Error restoring previous editor', error);
+        if (!this.previousActiveEditor) {
+            return;
+        }
+
+        const previous = this.previousActiveEditor;
+        this.previousActiveEditor = undefined;
+
+        try {
+            await vscode.window.showTextDocument(previous.document, previous.viewColumn);
+
+            // Restore cursor position
+            const editor = vscode.window.activeTextEditor;
+            if (editor) {
+                editor.selection = previous.selection;
+                editor.revealRange(previous.selection, vscode.TextEditorRevealType.Default);
             }
+        } catch (error) {
+            log('Could not restore the previously active editor', error);
         }
     }
-    
+
     /**
      * Preview a file based on the selected quick pick item
      */
     public async peekItem(items: readonly SearchQuickPickItem[]): Promise<void> {
-        if (items.length === 0) {
+        const data = items[0]?.data;
+        if (!data) {
             return;
         }
 
-        const currentItem = items[0];
-        if (!currentItem.data) {
-            return;
-        }
+        const { filePath, linePos, colPos } = data;
 
-        const { filePath, linePos, colPos } = currentItem.data;
-        
         try {
             // Register this file as being previewed
-            if (this.editorHistoryManager) {
-                this.editorHistoryManager.addPreviewedFile(filePath);
-            }
-            
+            this.editorHistoryManager?.addPreviewedFile(filePath);
+
             // Use VS Code's native open command to handle all file types appropriately
-            const uri = vscode.Uri.file(filePath);
-            const success = await vscode.commands.executeCommand('vscode.open', uri, {
+            await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath), {
                 preview: true,
                 preserveFocus: true,
                 viewColumn: vscode.ViewColumn.Active
             });
-            
+
             // For text files, VS Code will create a text editor
             const editor = vscode.window.activeTextEditor;
             if (editor && editor.document.uri.fsPath === filePath) {
-                this.lastPreviewEditor = editor;
-                
-                // Position cursor and highlight line
                 setCursorPosition(editor, linePos, colPos);
                 this.decorationManager.highlightLine(editor, linePos);
             }
         } catch (error) {
-            // Handle any errors
-            console.log(`Error previewing file: ${filePath}`, error);
+            log(`Could not preview ${filePath}`, error);
         }
     }
-    
+
     /**
      * Clear all decorations
      */
     public clearDecorations(): void {
         this.decorationManager.clearDecorations();
     }
-    
+
+    public dispose(): void {
+        this.decorationManager.dispose();
+    }
+
     /**
      * Open the selected file
      */
@@ -119,36 +107,32 @@ export class PreviewManager {
         if (!data) {
             return;
         }
-        
+
         const { filePath, linePos, colPos } = data;
-        
+
         try {
-            // When a file is explicitly opened, turn off preview mode
-            // so this file actually gets added to history
-            if (this.editorHistoryManager) {
-                this.editorHistoryManager.setPreviewMode(false);
-                // Force add this file to history
-                this.editorHistoryManager.forceAddToHistory(filePath, linePos, colPos);
-            }
-            
+            // An explicit open should be recorded, so leave preview mode first.
+            this.editorHistoryManager?.setPreviewMode(false);
+            this.editorHistoryManager?.forceAddToHistory(filePath, linePos, colPos);
+
             // Let VS Code determine how to open the file based on its type
-            const uri = vscode.Uri.file(filePath);
-            await vscode.commands.executeCommand('vscode.open', uri, {
+            await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath), {
                 preview: false,
                 preserveFocus: false
             });
-            
+
             // For text files, VS Code will create a text editor and we can set the cursor
             const editor = vscode.window.activeTextEditor;
             if (editor && editor.document.uri.fsPath === filePath) {
                 setCursorPosition(editor, linePos, colPos);
             }
-            
-            // Clear the previous active editor reference since we're opening a new file
+
+            // Drop the restore target: the user chose this file, so dismissing
+            // the picker must not send them back to where they started.
             this.previousActiveEditor = undefined;
         } catch (error) {
-            // Handle errors gracefully
+            log(`Could not open ${filePath}`, error);
             vscode.window.showErrorMessage(`Could not open file: ${path.basename(filePath)}`);
         }
     }
-} 
+}
