@@ -21,7 +21,7 @@
     "search preview"
   ],
   "icon": "assets/icon.png",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.108.0"
   },
@@ -45,19 +45,31 @@
       {
         "command": "search-preview.openSearchSettings",
         "title": "Search Preview: Open Search Settings"
-      } 
+      }
     ],
     "configuration": {
       "title": "Search Preview",
       "properties": {
         "searchPreview.search.excludeDirectories": {
           "type": "array",
-          "default": ["node_modules", ".git", "venv", "env", "dist", "build"],
+          "default": [
+            "node_modules",
+            ".git",
+            "venv",
+            "env",
+            "dist",
+            "build"
+          ],
           "description": "Directories to exclude from search results"
         },
         "searchPreview.search.excludePatterns": {
           "type": "array",
-          "default": ["**/*.min.js", "**/*.log", "**/*.lock", "**/package-lock.json"],
+          "default": [
+            "**/*.min.js",
+            "**/*.log",
+            "**/*.lock",
+            "**/package-lock.json"
+          ],
           "description": "File patterns to exclude from search results (glob patterns)"
         },
         "searchPreview.search.maxResults": {
