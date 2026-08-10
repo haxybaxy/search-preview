@@ -1,25 +1,50 @@
 import * as vscode from 'vscode';
 import { EditorHistoryItem, SearchQuickPickItem } from '../types';
 import { EditorHistoryManager } from './editorHistory';
+import { FileIndex, FileSnapshot, snapshotOf } from './fileIndex';
 import { PreviewManager } from './previewManager';
-import { FzfNotFoundError, SearchAbortedError, fuzzySearchFiles } from '../utils/searchUtils';
+import { SearchSession } from './searchSession';
+import { FzfNotFoundError, SearchAbortedError, fuzzyFilter } from '../utils/searchUtils';
 import { toQuickPickItem } from '../utils/fileUtils';
 import { SettingsManager } from '../utils/settingsUtils';
 import { log } from '../utils/logger';
 
-/** Delay before a keystroke triggers a search, so we don't search per character. */
-const SEARCH_DEBOUNCE_MS = 50;
+/**
+ * Delay before a keystroke triggers a search.
+ *
+ * With the candidate list prepared up front a search costs single-digit
+ * milliseconds, so this wait is now the dominant part of the latency. It only
+ * needs to be long enough to coalesce a fast typist's burst; superseded searches
+ * are aborted anyway, and their fzf process killed with them.
+ */
+const SEARCH_DEBOUNCE_MS = 15;
+
+/**
+ * Delay before the highlighted row is previewed.
+ *
+ * Opening a document is expensive - it parses and renders. Key repeat runs at
+ * roughly 25-33ms, so this is set above that to preview only the row the user
+ * settles on rather than every row they pass through.
+ */
+const PREVIEW_DEBOUNCE_MS = 60;
 
 /** Below this many characters we show the unfiltered list instead of searching. */
 const MIN_QUERY_LENGTH = 2;
 
 type Mode = 'standard' | 'recent';
 
-export class QuickOpenProvider {
+export class QuickOpenProvider implements vscode.Disposable {
     private previewManager: PreviewManager;
 
-    constructor(private editorHistoryManager: EditorHistoryManager) {
+    constructor(
+        private editorHistoryManager: EditorHistoryManager,
+        private fileIndex: FileIndex
+    ) {
         this.previewManager = new PreviewManager(editorHistoryManager);
+    }
+
+    public dispose(): void {
+        this.previewManager.dispose();
     }
 
     /**
@@ -41,59 +66,39 @@ export class QuickOpenProvider {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (quickPick as any).sortByLabel = false;
 
-        // Per-picker state. show() can be re-entered, so none of this may live on
-        // the instance or a second picker would cancel the first one's work.
-        let debounceTimer: NodeJS.Timeout | undefined;
-        let inFlight: AbortController | undefined;
-        let hidden = false;
+        const session = new SearchSession();
 
-        // Enumerate the workspace once per picker rather than once per keystroke.
-        const workspaceFiles: Thenable<vscode.Uri[]> = mode === 'standard'
-            ? vscode.workspace.findFiles('**/*', SettingsManager.getGlobExcludePattern())
-            : Promise.resolve([]);
-
-        const cancelPending = (): void => {
-            if (debounceTimer) {
-                clearTimeout(debounceTimer);
-                debounceTimer = undefined;
+        // The recent list comes from history rather than the workspace, so it is
+        // prepared here once per picker instead of living in the file index.
+        let recentSnapshot: FileSnapshot | undefined;
+        const snapshotFor = async (): Promise<FileSnapshot> => {
+            if (mode === 'standard') {
+                return this.fileIndex.get();
             }
-            inFlight?.abort();
-            inFlight = undefined;
-        };
-
-        // True once a newer query, or a dismissal, has superseded this attempt.
-        const isStale = (controller: AbortController): boolean =>
-            hidden || controller.signal.aborted;
-
-        const settle = (controller: AbortController): void => {
-            if (inFlight !== controller) {
-                return;
+            if (!recentSnapshot) {
+                recentSnapshot = snapshotOf(this.fileHistory().map(item => item.uri));
             }
-            inFlight = undefined;
-            if (!hidden) {
-                quickPick.busy = false;
-            }
+            return recentSnapshot;
         };
 
         const render = async (value: string): Promise<void> => {
-            cancelPending();
-
-            const controller = new AbortController();
-            inFlight = controller;
+            const signal = session.begin();
             quickPick.busy = true;
 
             try {
-                const items = await this.buildItems(mode, value, workspaceFiles, controller.signal);
-                if (!isStale(controller)) {
+                const items = await this.buildItems(mode, value, snapshotFor, signal);
+                if (!session.isStale(signal)) {
                     quickPick.items = items;
                 }
             } catch (error) {
-                if (!isStale(controller)) {
+                if (!session.isStale(signal)) {
                     this.reportSearchFailure(error);
                     quickPick.items = [];
                 }
             } finally {
-                settle(controller);
+                if (session.end(signal)) {
+                    quickPick.busy = false;
+                }
             }
         };
 
@@ -102,24 +107,27 @@ export class QuickOpenProvider {
         quickPick.show();
 
         quickPick.onDidHide(() => {
-            hidden = true;
-            cancelPending();
+            session.close();
             this.previewManager.setPreviewMode(false);
             this.previewManager.clearDecorations();
             quickPick.dispose();
         });
 
         quickPick.onDidChangeValue(value => {
-            cancelPending();
-            debounceTimer = setTimeout(() => void render(value), SEARCH_DEBOUNCE_MS);
+            session.debounceSearch(SEARCH_DEBOUNCE_MS, () => void render(value));
         });
 
-        quickPick.onDidChangeActive(async items => {
-            this.previewManager.clearDecorations();
-            await this.previewManager.peekItem(items);
+        quickPick.onDidChangeActive(items => {
+            session.debouncePreview(PREVIEW_DEBOUNCE_MS, () => {
+                this.previewManager.clearDecorations();
+                void this.previewManager.peekItem(items);
+            });
         });
 
         quickPick.onDidAccept(async () => {
+            // The chosen row may not have been previewed yet.
+            session.cancelPreview();
+
             const selected = quickPick.selectedItems[0];
             if (selected?.data) {
                 await this.previewManager.openSelectedFile(selected.data);
@@ -152,33 +160,55 @@ export class QuickOpenProvider {
     private async buildItems(
         mode: Mode,
         value: string,
-        workspaceFiles: Thenable<vscode.Uri[]>,
+        snapshotFor: () => Promise<FileSnapshot>,
         signal: AbortSignal
     ): Promise<SearchQuickPickItem[]> {
         const isSearch = value.length >= MIN_QUERY_LENGTH;
 
+        if (mode === 'recent' && !isSearch) {
+            return this.recentEditorItems(this.fileHistory());
+        }
+
+        const snapshot = await snapshotFor();
+        const matches = isSearch
+            ? await this.match(snapshot, value, signal)
+            : snapshot.uris;
+
         if (mode === 'recent') {
-            const history = this.editorHistoryManager.getHistory()
-                .filter(item => item.uri.scheme === 'file');
-
-            if (!isSearch) {
-                return this.recentEditorItems(history);
-            }
-
-            const positions = new Map(history.map(item => [item.uri.fsPath, item]));
-            const matches = await fuzzySearchFiles(history.map(item => item.uri), value, signal);
+            const positions = new Map(this.fileHistory().map(item => [item.uri.fsPath, item]));
             return this.limit(matches).map(uri => {
                 const item = positions.get(uri.fsPath);
                 return toQuickPickItem(uri, item?.linePos ?? 0, item?.colPos ?? 0);
             });
         }
 
-        const files = await workspaceFiles;
-        const matches = isSearch
-            ? await fuzzySearchFiles(files, value, signal)
-            : files.filter(file => !SettingsManager.shouldExcludeFile(file.fsPath));
-
         return this.limit(matches).map(uri => toQuickPickItem(uri));
+    }
+
+    /**
+     * Run the query through fzf and map its output back to file URIs.
+     */
+    private async match(
+        snapshot: FileSnapshot,
+        query: string,
+        signal: AbortSignal
+    ): Promise<vscode.Uri[]> {
+        if (!snapshot.fzfInput) {
+            return [];
+        }
+
+        const matches: vscode.Uri[] = [];
+        for (const line of await fuzzyFilter(snapshot.fzfInput, query, signal)) {
+            const uri = snapshot.byPath.get(line);
+            if (uri) {
+                matches.push(uri);
+            }
+        }
+        return matches;
+    }
+
+    private fileHistory(): EditorHistoryItem[] {
+        return this.editorHistoryManager.getHistory().filter(item => item.uri.scheme === 'file');
     }
 
     /**

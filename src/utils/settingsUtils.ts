@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { PathMatcher, compileDirectoryExclude, compileGlob, normalizePath } from './glob';
 
 const CONFIG_SECTION = 'searchPreview.search';
 
@@ -7,67 +8,39 @@ const DEFAULT_EXCLUDE_PATTERNS = ['**/*.min.js', '**/*.log', '**/*.lock', '**/pa
 const DEFAULT_MAX_RESULTS = 100;
 
 /**
- * Utility to escape regex metacharacters in a string.
+ * Compiled exclude matchers, rebuilt lazily and dropped whenever the settings
+ * change. Compiling is cheap; running these is not, which is why the matchers
+ * come from `glob.ts` rather than a regex built here.
  */
-function escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+let excludeMatchers: PathMatcher[] | undefined;
 
-/**
- * Convert a simple glob pattern (limited ** and *) to a RegExp.
- * This is NOT a full glob implementation but covers the common cases we use
- * in the default config and keeps it fast.
- */
-function globToRegExp(glob: string): RegExp {
-    // Normalise path separators so we only handle '/'
-    const normalised = glob.replace(/\\/g, '/');
-
-    // First escape all regex metacharacters
-    let regexStr = escapeRegex(normalised);
-
-    // Replace escaped glob tokens with regex equivalents
-    regexStr = regexStr
-        .replace(/\\\*\\\*/g, '.*')     // **  -> .*
-        .replace(/\\\*/g, '[^/]*');     // *   -> any chars except '/'
-
-    return new RegExp(regexStr);
-}
-
-interface ExcludeMatchers {
-    directories: RegExp[];
-    patterns: RegExp[];
-}
-
-/**
- * Compiled exclude matchers, rebuilt lazily. Invalidated by
- * `registerSettingsInvalidation` so edited settings take effect immediately.
- */
-let excludeMatchers: ExcludeMatchers | undefined;
-
-function getExcludeMatchers(): ExcludeMatchers {
+function getExcludeMatchers(): PathMatcher[] {
     if (!excludeMatchers) {
-        excludeMatchers = {
-            // Directory matchers just look for '/<dir>/' anywhere in the path.
-            directories: SettingsManager.getExcludeDirectories()
-                .map(dir => new RegExp(`/${escapeRegex(dir)}/`)),
-            patterns: SettingsManager.getExcludePatterns().map(globToRegExp)
-        };
+        excludeMatchers = [
+            ...SettingsManager.getExcludeDirectories().map(compileDirectoryExclude),
+            ...SettingsManager.getExcludePatterns().map(glob => compileGlob(glob))
+        ];
     }
     return excludeMatchers;
 }
 
 /**
- * Drop the compiled matchers whenever the user edits our settings.
+ * Drop the compiled matchers whenever the user edits our settings, and let the
+ * caller invalidate anything derived from them.
  *
- * Without this the caches are built once per window and never rebuilt, so
- * changing an exclude list did nothing until the window was reloaded - which
- * is confusing given the extension ships an "Open Search Settings" command.
+ * Without this the matchers are built once per window and never rebuilt, so
+ * changing an exclude list did nothing until the window was reloaded - which is
+ * confusing given the extension ships an "Open Search Settings" command.
  */
-export function registerSettingsInvalidation(context: vscode.ExtensionContext): void {
+export function registerSettingsInvalidation(
+    context: vscode.ExtensionContext,
+    onChange?: () => void
+): void {
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(event => {
             if (event.affectsConfiguration(CONFIG_SECTION)) {
                 excludeMatchers = undefined;
+                onChange?.();
             }
         })
     );
@@ -128,13 +101,14 @@ export class SettingsManager {
     }
 
     /**
-     * Check if a file path should be excluded based on settings
+     * Whether a workspace-relative path is excluded by the user's settings.
+     *
+     * Takes a relative path, not an absolute one: exclude globs are written
+     * relative (`**` + `/*.min.js`), and this has to agree with the pattern
+     * handed to findFiles by `getGlobExcludePattern`.
      */
-    public static shouldExcludeFile(filePath: string): boolean {
-        const normalizedPath = filePath.replace(/\\/g, '/');
-        const { directories, patterns } = getExcludeMatchers();
-
-        return directories.some(regex => regex.test(normalizedPath))
-            || patterns.some(regex => regex.test(normalizedPath));
+    public static shouldExclude(relativePath: string): boolean {
+        const normalized = normalizePath(relativePath);
+        return getExcludeMatchers().some(match => match(normalized));
     }
 }

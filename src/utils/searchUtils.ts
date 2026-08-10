@@ -1,6 +1,4 @@
-import * as vscode from 'vscode';
 import { spawn } from 'child_process';
-import { SettingsManager } from './settingsUtils';
 import { log } from './logger';
 
 /**
@@ -29,25 +27,23 @@ export class SearchAbortedError extends Error {
 }
 
 /**
- * Filter file paths through fzf, preserving fzf's own ranking.
+ * Filter newline-delimited lines through fzf, preserving fzf's own ranking.
  *
- * @param files Candidate file URIs
+ * Intentionally knows nothing about files or settings: the caller prepares the
+ * payload once per session (see `FileIndex`) rather than per keystroke, which is
+ * where this used to spend nearly all of its time.
+ *
+ * @param input Newline-delimited candidates
  * @param searchText Query passed to `fzf --filter`
  * @param signal Aborting this kills the fzf process and rejects with SearchAbortedError
+ * @returns The matching lines, best match first
  */
-export async function fuzzySearchFiles(
-    files: vscode.Uri[],
+export async function fuzzyFilter(
+    input: string,
     searchText: string,
     signal?: AbortSignal
-): Promise<vscode.Uri[]> {
-    const pathToUri = new Map<string, vscode.Uri>();
-    for (const file of files) {
-        if (!SettingsManager.shouldExcludeFile(file.fsPath)) {
-            pathToUri.set(vscode.workspace.asRelativePath(file.fsPath), file);
-        }
-    }
-
-    return new Promise<vscode.Uri[]>((resolve, reject) => {
+): Promise<string[]> {
+    return new Promise<string[]>((resolve, reject) => {
         if (signal?.aborted) {
             reject(new SearchAbortedError());
             return;
@@ -89,19 +85,12 @@ export async function fuzzySearchFiles(
                 return;
             }
 
-            const matches: vscode.Uri[] = [];
-            for (const line of stdout.split('\n')) {
-                const uri = pathToUri.get(line);
-                if (uri) {
-                    matches.push(uri);
-                }
-            }
-            resolve(matches);
+            resolve(stdout.split('\n').filter(Boolean));
         });
 
         // fzf can exit before we finish writing; that surfaces here as EPIPE
         // and is already handled by the 'close' handler above.
         fzf.stdin.on('error', () => undefined);
-        fzf.stdin.end([...pathToUri.keys()].join('\n'));
+        fzf.stdin.end(input);
     });
 }

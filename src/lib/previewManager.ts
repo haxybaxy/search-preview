@@ -6,7 +6,7 @@ import { DecorationManager } from '../utils/decorationUtils';
 import { EditorHistoryManager } from './editorHistory';
 import { log } from '../utils/logger';
 
-export class PreviewManager {
+export class PreviewManager implements vscode.Disposable {
     private decorationManager: DecorationManager;
     private editorHistoryManager?: EditorHistoryManager;
     private previousActiveEditor?: vscode.TextEditor;
@@ -94,6 +94,10 @@ export class PreviewManager {
      */
     public clearDecorations(): void {
         this.decorationManager.clearDecorations();
+    }
+
+    public dispose(): void {
+        this.decorationManager.dispose();
     }
 
     /**

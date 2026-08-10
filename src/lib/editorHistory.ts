@@ -5,11 +5,21 @@ import { log } from '../utils/logger';
 const STORAGE_KEY = 'editorHistory';
 const MAX_HISTORY_SIZE = 100;
 
+/**
+ * How long to batch history writes.
+ *
+ * Persisting hits VS Code's state store, and previewing a file counts as an
+ * editor change - so without this, arrowing through the picker writes to disk
+ * once per row. Flushed on deactivate so nothing is lost.
+ */
+const SAVE_DEBOUNCE_MS = 500;
+
 export class EditorHistoryManager {
     private history: EditorHistoryItem[] = [];
     private previewMode = false;
     private previewedFiles = new Set<string>();
     private lastOpenedFile?: string;
+    private saveTimer?: NodeJS.Timeout;
     private storage: vscode.Memento;
 
     constructor(context: vscode.ExtensionContext) {
@@ -100,10 +110,10 @@ export class EditorHistoryManager {
      * and trimming to MAX_HISTORY_SIZE.
      */
     private pushHistoryEntry(uri: vscode.Uri, linePos: number, colPos: number): void {
-        const relativePath = vscode.workspace.asRelativePath(uri.fsPath);
-        const existingIndex = this.history.findIndex(
-            item => vscode.workspace.asRelativePath(item.uri.fsPath) === relativePath
-        );
+        // fsPath is the canonical identity for these URIs. The previous
+        // asRelativePath comparison called into the workspace API on both sides
+        // of every element, up to 200 times per editor switch.
+        const existingIndex = this.history.findIndex(item => item.uri.fsPath === uri.fsPath);
         if (existingIndex >= 0) {
             this.history.splice(existingIndex, 1);
         }
@@ -114,7 +124,33 @@ export class EditorHistoryManager {
             this.history.pop();
         }
 
-        void this.saveHistory();
+        this.scheduleSave();
+    }
+
+    /**
+     * Batch up rapid history changes into a single write.
+     */
+    private scheduleSave(): void {
+        if (this.saveTimer) {
+            clearTimeout(this.saveTimer);
+        }
+        this.saveTimer = setTimeout(() => {
+            this.saveTimer = undefined;
+            void this.saveHistory();
+        }, SAVE_DEBOUNCE_MS);
+    }
+
+    /**
+     * Write any pending history immediately. Called on deactivate, where a
+     * debounced write would otherwise never fire.
+     */
+    public async flush(): Promise<void> {
+        if (!this.saveTimer) {
+            return;
+        }
+        clearTimeout(this.saveTimer);
+        this.saveTimer = undefined;
+        await this.saveHistory();
     }
 
     /**
